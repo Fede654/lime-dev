@@ -46,6 +46,7 @@ Setup Commands:
 
 Build Commands:
     lime build                          # Native build (default target)
+    lime build x86_64                   # Build for x86_64 (QEMU/VM)
     lime build docker librerouter-v1    # Docker build 
     lime build native --download-only   # Download dependencies only
     lime build --clean                  # Clean build environment

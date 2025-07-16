@@ -33,6 +33,7 @@ Targets:
     ath79_generic_multiradio Multiple ath79 devices
     youhua_wr1200js          Youhua WR1200JS router
     librerouter-r2           LibreRouter R2 (experimental)
+    x86_64                   x86_64 virtual machine/QEMU target
     
 Options:
     --download-only     Download dependencies only (no build)
