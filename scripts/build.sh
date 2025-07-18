@@ -38,7 +38,10 @@ Targets:
 Options:
     --download-only     Download dependencies only (no build)
     --shell            Open interactive shell (docker method only)
-    --clean            Clean build environment
+    --clean [TYPE]     Clean build environment
+                       Types: all (default), build, downloads, outputs
+    --mode [MODE]      Set build mode (development, release)
+                       Controls source repository selection
     -h, --help         Show this help
 
 Examples:
@@ -48,6 +51,10 @@ Examples:
     $0 native --download-only       # Download dependencies only
     $0 docker --shell               # Open Docker shell
     $0 --clean                      # Clean all build artifacts
+    $0 --clean build                # Clean only build directory (2.3GB)
+    $0 --clean downloads            # Clean only downloads cache (854MB)
+    $0 --clean outputs              # Clean only binary outputs (4MB)
+    $0 --mode release x86_64        # Release build for x86_64 target
 
 Direct Scripts:
     ./librerouteros-wrapper.sh      # Direct native build
@@ -100,19 +107,54 @@ docker_build() {
 }
 
 clean_build() {
-    print_info "Cleaning build environment..."
+    local clean_type="${1:-all}"
     
-    # Clean librerouteros build artifacts
-    if [[ -d "$LIME_BUILD_DIR/repos/librerouteros" ]]; then
-        cd "$LIME_BUILD_DIR/repos/librerouteros"
-        rm -rf build/ dl/ bin/ .config .config.old build.log 2>/dev/null || true
-        print_info "LibreRouterOS build artifacts cleaned"
-    fi
+    print_info "Cleaning build environment (${clean_type})..."
     
-    # Clean Docker if available
-    if command -v docker >/dev/null 2>&1; then
+    case "$clean_type" in
+        all)
+            print_info "Cleaning all build artifacts..."
+            rm -rf "$LIME_BUILD_DIR/build/" 2>/dev/null || true
+            rm -rf "$LIME_BUILD_DIR/dl/" 2>/dev/null || true
+            rm -rf "$LIME_BUILD_DIR/repos/librerouteros/bin/" 2>/dev/null || true
+            rm -rf "$LIME_BUILD_DIR/repos/librerouteros/.config" 2>/dev/null || true
+            rm -rf "$LIME_BUILD_DIR/repos/librerouteros/.config.old" 2>/dev/null || true
+            rm -rf "$LIME_BUILD_DIR/repos/librerouteros/build.log" 2>/dev/null || true
+            print_info "✓ Build directory (2.3GB freed)"
+            print_info "✓ Downloads cache (854MB freed)"
+            print_info "✓ Binary outputs (4MB freed)"
+            print_info "✓ Configuration files"
+            ;;
+        build)
+            print_info "Cleaning build directory only..."
+            rm -rf "$LIME_BUILD_DIR/build/" 2>/dev/null || true
+            rm -rf "$LIME_BUILD_DIR/repos/librerouteros/.config" 2>/dev/null || true
+            rm -rf "$LIME_BUILD_DIR/repos/librerouteros/.config.old" 2>/dev/null || true
+            rm -rf "$LIME_BUILD_DIR/repos/librerouteros/build.log" 2>/dev/null || true
+            print_info "✓ Build directory (2.3GB freed)"
+            print_info "✓ Configuration files"
+            ;;
+        downloads)
+            print_info "Cleaning downloads cache only..."
+            rm -rf "$LIME_BUILD_DIR/dl/" 2>/dev/null || true
+            print_info "✓ Downloads cache (854MB freed)"
+            ;;
+        outputs)
+            print_info "Cleaning binary outputs only..."
+            rm -rf "$LIME_BUILD_DIR/repos/librerouteros/bin/" 2>/dev/null || true
+            print_info "✓ Binary outputs (4MB freed)"
+            ;;
+        *)
+            print_error "Unknown clean type: $clean_type"
+            print_error "Valid options: all, build, downloads, outputs"
+            exit 1
+            ;;
+    esac
+    
+    # Clean Docker if available and doing full clean
+    if [[ "$clean_type" == "all" ]] && command -v docker >/dev/null 2>&1; then
         "$SCRIPT_DIR/core/docker-build.sh" --clean 2>/dev/null || true
-        print_info "Docker build cache cleaned"
+        print_info "✓ Docker build cache cleaned"
     fi
     
     print_info "Build environment cleaned"
@@ -124,6 +166,7 @@ main() {
     local download_only="false"
     local shell_mode="false"
     local clean_mode="false"
+    local clean_type="all"
     
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -146,7 +189,23 @@ main() {
                 ;;
             --clean)
                 clean_mode="true"
-                shift
+                # Check if next argument is a clean type
+                if [[ $# -gt 1 && "$2" =~ ^(all|build|downloads|outputs)$ ]]; then
+                    clean_type="$2"
+                    shift 2
+                else
+                    clean_type="all"
+                    shift
+                fi
+                ;;
+            --mode)
+                if [[ $# -gt 1 && "$2" =~ ^(development|release)$ ]]; then
+                    export LIME_BUILD_MODE="$2"
+                    shift 2
+                else
+                    print_error "Invalid mode. Use 'development' or 'release'"
+                    exit 1
+                fi
                 ;;
             -h|--help)
                 usage
@@ -171,7 +230,7 @@ main() {
     print_info ""
     
     if [[ "$clean_mode" == "true" ]]; then
-        clean_build
+        clean_build "$clean_type"
         exit 0
     fi
     

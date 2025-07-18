@@ -19,14 +19,19 @@ fi
 
 cd "$LIBREROUTEROS_DIR"
 
-# Set up environment for our repository structure
-export OPENWRT_SRC_DIR="$LIBREROUTEROS_DIR/openwrt/"
-export KCONFIG_UTILS_DIR="$LIME_BUILD_DIR/repos/kconfig-utils/"
-export LIBREROUTEROS_DIR="$LIBREROUTEROS_DIR"
-
-# Override other paths to be relative to our build structure
-export OPENWRT_DL_DIR="$LIBREROUTEROS_DIR/dl/"
-export LIBREROUTEROS_BUILD_DIR="$LIBREROUTEROS_DIR/build/"
+# Load unified source of truth from versions.conf
+if [[ -f "$LIME_BUILD_DIR/scripts/utils/versions-parser.sh" ]]; then
+    source <(QUIET=true "$LIME_BUILD_DIR/scripts/utils/versions-parser.sh" environment "${LIME_BUILD_MODE:-development}")
+    echo "[LIME-DEV] Using unified source of truth (mode: ${LIME_BUILD_MODE:-development})"
+    echo "[LIME-DEV] LibreMesh feed: $LIBREMESH_FEED"
+else
+    # Fallback to direct environment setup
+    export OPENWRT_SRC_DIR="$LIBREROUTEROS_DIR/openwrt/"
+    export KCONFIG_UTILS_DIR="$LIME_BUILD_DIR/repos/kconfig-utils/"
+    export LIBREROUTEROS_DIR="$LIBREROUTEROS_DIR"
+    export OPENWRT_DL_DIR="$LIME_BUILD_DIR/dl/"
+    export LIBREROUTEROS_BUILD_DIR="$LIME_BUILD_DIR/build/"
+fi
 
 # Ensure necessary directories exist
 mkdir -p "$OPENWRT_DL_DIR"

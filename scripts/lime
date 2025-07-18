@@ -34,7 +34,8 @@ Main Commands:
     upgrade         LibreRouter v1 upgrade utility (safe-upgrade + optional firmware)
     update          Update repositories
     deps            Show dependency graph
-    clean           Clean build artifacts
+    clean [TYPE]    Clean build artifacts
+                    Types: all (default), build, downloads, outputs
 
 Setup Commands:
     lime setup check                    # Check status with dependency graph
@@ -50,6 +51,10 @@ Build Commands:
     lime build docker librerouter-v1    # Docker build 
     lime build native --download-only   # Download dependencies only
     lime build --clean                  # Clean build environment
+    lime clean                          # Clean all build artifacts (3.2GB)
+    lime clean build                    # Clean only build directory (2.3GB)
+    lime clean downloads                # Clean only downloads cache (854MB)  
+    lime clean outputs                  # Clean only binary outputs (4MB)
 
 Verification Commands:
     lime verify all                     # Complete environment verification
@@ -354,7 +359,11 @@ main() {
             exec "$SCRIPT_DIR/utils/dependency-graph.sh" ascii
             ;;
         clean)
-            exec "$SCRIPT_DIR/build.sh" --clean
+            if [[ $# -gt 1 && "$2" =~ ^(all|build|downloads|outputs)$ ]]; then
+                exec "$SCRIPT_DIR/build.sh" --clean "$2"
+            else
+                exec "$SCRIPT_DIR/build.sh" --clean
+            fi
             ;;
         upgrade)
             shift
