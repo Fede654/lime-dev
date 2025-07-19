@@ -77,18 +77,13 @@ detect_router_ip() {
 test_ssh_connection() {
     print_info "Testing SSH connection to $ROUTER_IP..."
     
-    # Test SSH connection with timeout
+    # Test SSH connection with timeout using consistent legacy options
     if timeout 10 sshpass -p "$ROUTER_PASSWORD" ssh \
-        -oHostKeyAlgorithms=+ssh-rsa \
-        -oStrictHostKeyChecking=no \
-        -oUserKnownHostsFile=/dev/null \
-        -oPasswordAuthentication=yes \
-        -oPubkeyAuthentication=no \
-        -oKbdInteractiveAuthentication=no \
-        -oPreferredAuthentications=password \
+        $SSH_LEGACY_OPTS \
         -oConnectTimeout=5 \
         root@"$ROUTER_IP" "echo 'SSH connection successful'" >/dev/null 2>&1; then
         print_success "SSH connection established"
+        print_info "Note: Host key verification disabled for thisnode.info multi-device support"
         return 0
     else
         print_error "Cannot establish SSH connection to $ROUTER_IP"
@@ -99,7 +94,7 @@ test_ssh_connection() {
         print_error "• Router has LibreMesh/OpenWrt firmware"
         print_info ""
         print_info "Troubleshooting tips:"
-        print_info "• Try manual SSH: ssh root@$ROUTER_IP"
+        print_info "• Try manual SSH: ssh $SSH_LEGACY_OPTS root@$ROUTER_IP"
         print_info "• Check if router responds: ping $ROUTER_IP"
         print_info "• Verify router password"
         print_info "• Connect directly to router's WiFi"
@@ -157,23 +152,36 @@ The script will:
 3. Use safe dual-boot system with 20-minute confirmation window
 4. Provide complete technical summary and confirmation instructions
 
+Multi-device Support:
+• thisnode.info hostname conflicts automatically handled
+• SSH host key verification disabled for sequential device upgrades
+• Safe to upgrade multiple routers without manual known_hosts cleanup
+
 Download firmware from: https://downloads.libremesh.org/
 Look for: librerouter-v1-*-sysupgrade.bin
 
 EOF
 }
 
-# SSH helper with connection multiplexing (use short path to avoid length limits)
+# SSH configuration for legacy LibreRouter devices
+# 
+# IMPORTANT: thisnode.info hostname conflict resolution
+# LibreMesh devices all respond to thisnode.info on their local network, but each device
+# has different SSH host keys. When connecting to multiple devices sequentially using
+# thisnode.info, SSH will fail with "Host key verification failed" errors.
+# 
+# Solution: Disable host key checking entirely with consistent options across all SSH calls:
+# - StrictHostKeyChecking=no: Skip host key verification 
+# - UserKnownHostsFile=/dev/null: Don't save/check known hosts
+# - HostKeyAlgorithms=+ssh-rsa: Support legacy SSH-RSA keys
+#
 SSH_CONTROL_PATH="/tmp/ssh_ctrl_$$"
+SSH_LEGACY_OPTS="-oHostKeyAlgorithms=+ssh-rsa -oStrictHostKeyChecking=no -oUserKnownHostsFile=/dev/null -oPasswordAuthentication=yes -oPubkeyAuthentication=no -oKbdInteractiveAuthentication=no -oPreferredAuthentications=password"
+
+# SSH helper with connection multiplexing (use short path to avoid length limits)
 ssh_cmd() {
     sshpass -p "$ROUTER_PASSWORD" ssh \
-        -oHostKeyAlgorithms=+ssh-rsa \
-        -oStrictHostKeyChecking=no \
-        -oUserKnownHostsFile=/dev/null \
-        -oPasswordAuthentication=yes \
-        -oPubkeyAuthentication=no \
-        -oKbdInteractiveAuthentication=no \
-        -oPreferredAuthentications=password \
+        $SSH_LEGACY_OPTS \
         -oConnectTimeout=10 \
         -oControlMaster=auto \
         -oControlPath="$SSH_CONTROL_PATH" \
@@ -234,21 +242,18 @@ check_safe_upgrade_version() {
     
     # Test SSH connection first
     if timeout 10 sshpass -p "$ROUTER_PASSWORD" ssh \
-        -oHostKeyAlgorithms=+ssh-rsa \
-        -oStrictHostKeyChecking=no \
+        $SSH_LEGACY_OPTS \
         -oConnectTimeout=5 \
         root@"$ROUTER_IP" "test -x /usr/sbin/safe-upgrade" 2>/dev/null; then
         safe_upgrade_exists=true
         current_version=$(timeout 10 sshpass -p "$ROUTER_PASSWORD" ssh \
-            -oHostKeyAlgorithms=+ssh-rsa \
-            -oStrictHostKeyChecking=no \
+            $SSH_LEGACY_OPTS \
             -oConnectTimeout=5 \
             root@"$ROUTER_IP" "safe-upgrade show 2>/dev/null | head -1" || echo "unknown")
         
         # Get hash of current safe-upgrade for comparison
         current_hash=$(timeout 10 sshpass -p "$ROUTER_PASSWORD" ssh \
-            -oHostKeyAlgorithms=+ssh-rsa \
-            -oStrictHostKeyChecking=no \
+            $SSH_LEGACY_OPTS \
             -oConnectTimeout=5 \
             root@"$ROUTER_IP" "sha256sum /usr/sbin/safe-upgrade 2>/dev/null | cut -d' ' -f1" || echo "")
         
@@ -261,76 +266,70 @@ check_safe_upgrade_version() {
         print_warning "safe-upgrade not found on router"
     fi
     
-    # Known hash of latest safe-upgrade (updated when upstream changes)
-    local known_latest_hash="18e5c0bba3119366101a6f246201f4c3e220c96712a122fa05a7e25cad2c7cbd"
-    local known_latest_size="17642"
+    # Local safe-upgrade for legacy device support
+    local local_safe_upgrade="$SCRIPT_DIR/../../resources/legacy-support/safe-upgrade"
+    local known_latest_hash="309149758a17b8f90454550478de5d20510e7984742d899549a9c1c36cae539b"
+    local known_latest_size="18338"
+    local original_upstream_hash="18e5c0bba3119366101a6f246201f4c3e220c96712a122fa05a7e25cad2c7cbd"
     
-    print_info "Checking against known latest version..."
-    print_info "Known latest: $known_latest_size bytes, hash: ${known_latest_hash:0:12}..."
+    print_info "Using local safe-upgrade for legacy device support..."
+    print_info "Local version: $known_latest_size bytes (with documentation), hash: ${known_latest_hash:0:12}..."
+    print_info "Upstream original: ${original_upstream_hash:0:12}... (cached for legacy compatibility)"
     
-    # If current hash matches known latest, skip download entirely
+    # If current hash matches known latest, skip update entirely
     if [[ -n "$current_hash" ]] && [[ "$current_hash" == "$known_latest_hash" ]]; then
-        print_success "safe-upgrade is up-to-date (matches known latest hash)"
+        print_success "safe-upgrade is up-to-date (matches local legacy version)"
         return 0  # No update needed
     fi
     
-    # If hash differs or not available, download to verify and update
-    print_info "Downloading latest safe-upgrade from LibreMesh repository..."
+    # Verify local safe-upgrade exists and copy to cache
+    if [[ ! -f "$local_safe_upgrade" ]]; then
+        print_error "Local safe-upgrade not found at: $local_safe_upgrade"
+        print_error "This should not happen - please check repository integrity"
+        return 1
+    fi
+    
+    # Verify local file hash matches expected
+    local local_hash=$(sha256sum "$local_safe_upgrade" | cut -d' ' -f1)
+    if [[ "$local_hash" != "$known_latest_hash" ]]; then
+        print_error "Local safe-upgrade hash mismatch!"
+        print_error "Expected: $known_latest_hash"
+        print_error "Found:    $local_hash"
+        print_error "Repository may be corrupted - please re-clone"
+        return 1
+    fi
+    
+    # Copy local safe-upgrade to cache for installation
     local cache_dir="$SCRIPT_DIR/../../cache/router-upgrade"
     mkdir -p "$cache_dir"
+    cp "$local_safe_upgrade" "$cache_dir/safe-upgrade"
     
-    if wget -q -O "$cache_dir/safe-upgrade.new" \
-        "https://raw.githubusercontent.com/libremesh/lime-packages/refs/heads/master/packages/safe-upgrade/files/usr/sbin/safe-upgrade"; then
-        print_success "Latest safe-upgrade downloaded"
-    else
-        print_error "Failed to download latest safe-upgrade"
-        if [[ "$safe_upgrade_exists" == "true" ]]; then
-            print_warning "Continuing with existing safe-upgrade on router"
-            return 0
-        else
-            return 1
-        fi
-    fi
-    
-    # Calculate hash of downloaded version
-    local new_hash=$(sha256sum "$cache_dir/safe-upgrade.new" | cut -d' ' -f1)
-    local new_size=$(stat -c%s "$cache_dir/safe-upgrade.new")
-    print_info "Downloaded: $new_size bytes, hash: ${new_hash:0:12}..."
-    
-    # Update known hash if different (for next time)
-    if [[ "$new_hash" != "$known_latest_hash" ]]; then
-        print_warning "Downloaded hash differs from known latest - upstream may have updated"
-        print_info "Consider updating known_latest_hash in script to: $new_hash"
-    fi
+    print_success "Local safe-upgrade prepared for installation"
+    print_info "Verified: $known_latest_size bytes, hash: ${known_latest_hash:0:12}..."
     
     # Compare versions if both exist
     if [[ "$safe_upgrade_exists" == "true" ]]; then
         # Hash comparison is primary detection method
-        if [[ -n "$current_hash" ]] && [[ "$current_hash" == "$new_hash" ]]; then
+        if [[ -n "$current_hash" ]] && [[ "$current_hash" == "$known_latest_hash" ]]; then
             print_success "safe-upgrade is up-to-date (hash match)"
-            rm -f "$cache_dir/safe-upgrade.new"
             return 0  # No update needed
         elif [[ -n "$current_hash" ]]; then
             print_info "safe-upgrade update available (hash mismatch)"
-            print_info "Current: ${current_hash:0:12}... → Latest: ${new_hash:0:12}..."
-            mv "$cache_dir/safe-upgrade.new" "$cache_dir/safe-upgrade"
+            print_info "Current: ${current_hash:0:12}... → Local: ${known_latest_hash:0:12}..."
             return 2  # Update needed
         else
             # Fallback: no hash available, check version
             if [[ "$current_version" == "unknown" ]] || [[ "$current_version" == *"version: 0."* ]]; then
                 print_info "Legacy safe-upgrade detected (no hash) - upgrade required"
-                mv "$cache_dir/safe-upgrade.new" "$cache_dir/safe-upgrade"
                 return 2  # Update needed
             else
-                print_warning "Cannot verify safe-upgrade version (no hash) - assuming current"
-                rm -f "$cache_dir/safe-upgrade.new" 
-                return 0  # Assume no update needed
+                print_warning "Cannot verify safe-upgrade version (no hash) - assuming update needed"
+                return 2  # Update needed for safety
             fi
         fi
     else
-        # No safe-upgrade exists, install latest
-        print_info "Installing latest safe-upgrade (not present on router)"
-        mv "$cache_dir/safe-upgrade.new" "$cache_dir/safe-upgrade"
+        # No safe-upgrade exists, install local version
+        print_info "Installing local safe-upgrade (not present on router)"
         return 2  # Update needed
     fi
 }
