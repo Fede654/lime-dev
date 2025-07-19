@@ -1,0 +1,18 @@
+{
+    "lime-app": {
+        "description": "lime-app public access with session management",
+        "read": {
+            "ubus": {
+                    "lime-utils": [ "*" ],
+                    "system": [ "board" ],
+                    "session": [ "access", "login" ]
+            }
+        },
+        "write": {
+            "ubus": {
+                    "lime-utils": [ "*" ],
+                    "session": [ "login", "destroy" ]
+            }
+        }
+    }
+}
