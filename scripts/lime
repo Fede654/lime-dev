@@ -35,8 +35,9 @@ Main Commands:
     update          Update repositories
     deps            Show dependency graph
     clean [TYPE]    Clean build artifacts
-    patches         Manage custom patches for LibreMesh packages
                     Types: all (default), build, downloads, outputs
+    patches         Manage custom patches for LibreMesh packages
+    mesh            Deploy and manage LibreMesh mesh network configurations
 
 Setup Commands:
     lime setup check                    # Check status with dependency graph
@@ -68,6 +69,13 @@ Patch Management Commands:
     lime patches apply                  # Apply all patches to build environment
     lime patches apply --dry-run        # Preview patch application
     lime patches --help                 # Show patch management help
+
+Mesh Network Management:
+    lime mesh list                      # List available mesh configurations
+    lime mesh deploy testmesh           # Deploy TestMesh to default router
+    lime mesh deploy testmesh 10.13.0.1 # Deploy to specific router
+    lime mesh status testmesh           # Check mesh network status
+    lime mesh verify testmesh           # Verify mesh connectivity
 
 AI Development Tools:
     lime ai review --repo lime-app      # AI code review
@@ -375,6 +383,10 @@ main() {
         patches)
             shift
             exec "$SCRIPT_DIR/utils/apply-patches.sh" "$@"
+            ;;
+        mesh)
+            shift
+            exec "$SCRIPT_DIR/utils/mesh-manager.sh" "$@"
             ;;
         upgrade)
             shift
