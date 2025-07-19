@@ -135,6 +135,19 @@ lime-dev/
 └── logs/                 # Build logs and debugging output
 ```
 
+## 📚 Documentation
+
+### lime-dev Development Environment
+- **[Development Guide](docs/DEVELOPMENT.md)** - Complete setup and development workflow
+- **[Architecture Overview](docs/ARCHITECTURE.md)** - Repository structure and design decisions  
+- **[Troubleshooting Guide](docs/TROUBLESHOOTING.md)** - Common issues and solutions
+- **[QEMU Integration](docs/qemu/)** - Virtual testing environment setup
+
+### LibreMesh Technology  
+- **[LibreMesh Developer Docs](docs/libremesh/)** - LibreMesh-specific development guides
+- **[Hierarchical Configuration](docs/libremesh/HIERARCHICAL-CONFIGURATION.md)** - Multi-level configuration management system
+- **[Package Development](docs/libremesh/)** - Creating and maintaining LibreMesh packages *(planned)*
+
 ## Common Workflows
 
 ### Firmware Development
