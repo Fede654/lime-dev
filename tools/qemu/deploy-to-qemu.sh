@@ -1,24 +1,21 @@
 #!/usr/bin/env bash
 #
 # Official LibreMesh lime-app development integration script
-# Migrated from lime-app to lime-dev
 # 
 # This script follows the official workflow documented in:
 # - lime-packages/TESTING.md (line 241)
 # - lime-packages/packages/lime-app/Makefile (lines 39-40)
 #
-# Usage: ./deploy-to-qemu.sh [--build-only] [--start-qemu] [--project PROJECT]
+# Usage: ./scripts/deploy-to-qemu.sh [--build-only] [--start-qemu]
 #
 
 set -e
 
-# Get script directory for relative imports
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Configuration (lime-dev structure)
-LIME_PACKAGES_DIR="${LIME_PACKAGES_DIR:-$SCRIPT_DIR/../../repos/lime-packages}"
-PROJECT_NAME="${1:-lime-app}"  # Default to lime-app, can be overridden
-PROJECT_DIR="$SCRIPT_DIR/../../repos/$PROJECT_NAME"
+# Configuration
+LIME_PACKAGES_DIR="../lime-packages"
+LIME_APP_FILES_DIR="$LIME_PACKAGES_DIR/packages/lime-app/files/www/app"
+ROOTFS_PATH="$LIME_PACKAGES_DIR/build/libremesh-2024.1-ow23.05.5-default-x86-64-generic-squashfs-rootfs.img.gz"
+KERNEL_PATH="$LIME_PACKAGES_DIR/build/libremesh-2024.1-ow23.05.5-default-x86-64-generic-initramfs-kernel.bin"
 
 # Colors for output
 RED='\033[0;31m'
@@ -38,112 +35,99 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Auto-detect project type and configuration
-detect_project_config() {
-    if [ ! -d "$PROJECT_DIR" ]; then
-        print_error "Project directory not found: $PROJECT_DIR"
-        print_error "Available projects in repos/:"
-        ls -d "$SCRIPT_DIR/../../repos"/* 2>/dev/null | xargs -I {} basename {} || echo "  None found"
-        exit 1
-    fi
-    
-    # Detect project type and set deployment target
-    if [ -f "$PROJECT_DIR/package.json" ]; then
-        PROJECT_TYPE="npm"
-        DEPLOYMENT_TARGET="$LIME_PACKAGES_DIR/packages/$PROJECT_NAME/files/www/app"
-        BUILD_COMMAND="npm run build:production || npm run build"
-        BUILD_DIR="$PROJECT_DIR/build"
-    elif [ -f "$PROJECT_DIR/Makefile" ]; then
-        PROJECT_TYPE="makefile"
-        DEPLOYMENT_TARGET="$LIME_PACKAGES_DIR/packages/$PROJECT_NAME/files"
-        BUILD_COMMAND="make"
-        BUILD_DIR="$PROJECT_DIR/dist"
-    else
-        print_error "Unknown project type in $PROJECT_DIR"
-        print_error "Supported: package.json (npm) or Makefile"
-        exit 1
-    fi
-    
-    print_status "Detected project: $PROJECT_NAME ($PROJECT_TYPE)"
-    print_status "Deployment target: $DEPLOYMENT_TARGET"
-}
-
 # Check prerequisites
 check_prerequisites() {
     print_status "Checking prerequisites..."
     
     if [ ! -d "$LIME_PACKAGES_DIR" ]; then
         print_error "lime-packages directory not found at $LIME_PACKAGES_DIR"
-        print_error "Please ensure lime-packages is available in repos/"
+        print_error "Please ensure lime-packages is cloned in the parent directory"
         exit 1
     fi
     
-    # Check for QEMU images (will delegate to qemu-manager for detection)
-    if [ ! -d "$LIME_PACKAGES_DIR/build" ]; then
-        print_warning "No build directory found in lime-packages"
-        print_warning "QEMU images may not be available"
+    if [ ! -f "$ROOTFS_PATH" ]; then
+        print_error "LibreMesh rootfs not found at $ROOTFS_PATH"
+        print_error "Please download the LibreMesh development images"
+        exit 1
+    fi
+    
+    if [ ! -f "$KERNEL_PATH" ]; then
+        print_error "LibreMesh kernel not found at $KERNEL_PATH"
+        print_error "Please download the LibreMesh development images"
+        exit 1
     fi
     
     print_status "Prerequisites check passed"
 }
 
-# Build project
-build_project() {
-    print_status "Building $PROJECT_NAME..."
+# Build lime-app for router environment
+build_lime_app() {
+    print_status "Building lime-app for LibreMesh router..."
     
-    cd "$PROJECT_DIR"
-    
-    if [ "$PROJECT_TYPE" = "npm" ]; then
-        # Check if build:production exists, fallback to build
-        if npm run | grep -q "build:production"; then
-            npm run build:production
-        else
-            npm run build
-        fi
-    elif [ "$PROJECT_TYPE" = "makefile" ]; then
-        make clean || true
-        make
+    # Check if build:production exists, fallback to build
+    if npm run | grep -q "build:production"; then
+        npm run build:production
+    else
+        npm run build
     fi
     
-    if [ ! -d "$BUILD_DIR" ]; then
-        print_error "Build directory not found at $BUILD_DIR. Build failed?"
+    if [ ! -d "build" ]; then
+        print_error "Build directory not found. Build failed?"
         exit 1
     fi
     
-    print_status "$PROJECT_NAME build completed"
+    print_status "lime-app build completed"
 }
 
 # Deploy to lime-packages (official method)
 deploy_to_lime_packages() {
-    print_status "Deploying $PROJECT_NAME to lime-packages (official method)..."
+    print_status "Deploying lime-app to lime-packages (official method)..."
     
-    # Create the deployment directory
-    mkdir -p "$DEPLOYMENT_TARGET"
-    
-    # Clean old build files to prevent accumulation
-    print_warning "Cleaning old build files..."
-    rm -rf "$DEPLOYMENT_TARGET"/*
+    # Create the app directory in lime-packages
+    mkdir -p "$LIME_APP_FILES_DIR"
     
     # Copy build files (official LibreMesh workflow)
-    cp -r "$BUILD_DIR"/* "$DEPLOYMENT_TARGET/"
+    cp -r build/* "$LIME_APP_FILES_DIR/"
     
-    print_status "$PROJECT_NAME deployed to $DEPLOYMENT_TARGET"
+    print_status "lime-app deployed to lime-packages/packages/lime-app/files/www/app/"
     print_status "Files deployed:"
-    ls -la "$DEPLOYMENT_TARGET" | head -10
+    ls -la "$LIME_APP_FILES_DIR" | head -10
 }
 
-# Start QEMU with project integration
+# Start QEMU with lime-app integration
 start_qemu() {
-    print_status "Starting QEMU LibreMesh with $PROJECT_NAME integration..."
+    print_status "Starting QEMU LibreMesh with lime-app integration..."
     
-    # Use the qemu-manager from lime-dev
-    "$SCRIPT_DIR/qemu-manager.sh" start
+    print_warning "LibreMesh will be available at: http://10.13.0.1"
+    print_warning "lime-app will be available at: http://10.13.0.1/app"
+    
+    # Check if running as root
+    if [ "$EUID" -eq 0 ]; then
+        print_status "Running as root..."
+        "$LIME_PACKAGES_DIR/tools/qemu_dev_start" \
+            --libremesh-workdir "$LIME_PACKAGES_DIR" \
+            "$ROOTFS_PATH" \
+            "$KERNEL_PATH"
+    # Check if sudo is available and user is in sudoers
+    elif command -v sudo >/dev/null 2>&1 && sudo -l >/dev/null 2>&1; then
+        print_status "Running with sudo..."
+        sudo "$LIME_PACKAGES_DIR/tools/qemu_dev_start" \
+            --libremesh-workdir "$LIME_PACKAGES_DIR" \
+            "$ROOTFS_PATH" \
+            "$KERNEL_PATH"
+    else
+        print_warning "sudo not available or user not in sudoers"
+        print_status "Using 'su' to run as root..."
+        print_warning "You will be prompted for the root password"
+        
+        QEMU_CMD="$LIME_PACKAGES_DIR/tools/qemu_dev_start --libremesh-workdir $LIME_PACKAGES_DIR $ROOTFS_PATH $KERNEL_PATH"
+        su -c "$QEMU_CMD"
+    fi
 }
 
 # Parse command line arguments
 BUILD_ONLY=false
 START_QEMU=false
-PROJECT_OVERRIDE=""
 
 for arg in "$@"; do
     case $arg in
@@ -155,64 +139,48 @@ for arg in "$@"; do
             START_QEMU=true
             shift
             ;;
-        --project)
-            PROJECT_OVERRIDE="$2"
-            shift 2
-            ;;
         --help)
-            echo "Usage: $0 [--build-only] [--start-qemu] [--project PROJECT]"
+            echo "Usage: $0 [--build-only] [--start-qemu]"
             echo ""
             echo "Options:"
-            echo "  --build-only    Only build and deploy project, don't start QEMU"
+            echo "  --build-only    Only build and deploy lime-app, don't start QEMU"
             echo "  --start-qemu    Also start QEMU after building and deploying"
-            echo "  --project NAME  Deploy specific project (default: lime-app)"
             echo "  --help          Show this help message"
             echo ""
-            echo "Default behavior: Build and deploy project only"
+            echo "Default behavior: Build and deploy lime-app only"
             echo ""
             echo "Examples:"
-            echo "  $0                         # Build and deploy lime-app only"
-            echo "  $0 --start-qemu            # Build, deploy lime-app, and start QEMU"
-            echo "  $0 --project lime-packages # Deploy lime-packages project"
+            echo "  $0                    # Build and deploy only"
+            echo "  $0 --start-qemu       # Build, deploy, and start QEMU"
+            echo "  $0 --build-only       # Same as default"
             exit 0
             ;;
         *)
-            # Handle positional argument for project name
-            if [ -z "$PROJECT_OVERRIDE" ]; then
-                PROJECT_OVERRIDE="$arg"
-            else
-                print_error "Unknown option: $arg"
-                print_error "Use --help for usage information"
-                exit 1
-            fi
+            print_error "Unknown option: $arg"
+            print_error "Use --help for usage information"
+            exit 1
             ;;
     esac
 done
 
-# Override project name if specified
-if [ -n "$PROJECT_OVERRIDE" ]; then
-    PROJECT_NAME="$PROJECT_OVERRIDE"
-    PROJECT_DIR="$SCRIPT_DIR/../../repos/$PROJECT_NAME"
-fi
-
 # Main execution
-print_status "=== LibreMesh $PROJECT_NAME Development Integration ==="
+print_status "=== LibreMesh lime-app Development Integration ==="
 print_status "Following official LibreMesh development workflow"
 
-detect_project_config
 check_prerequisites
-build_project
+build_lime_app
 deploy_to_lime_packages
 
 if [ "$START_QEMU" = true ]; then
     start_qemu
 else
     print_status "=== Deployment Complete ==="
-    print_status "$PROJECT_NAME has been deployed to lime-packages"
+    print_status "lime-app has been deployed to lime-packages"
     print_status ""
     print_status "To start QEMU LibreMesh:"
     print_status "  $0 --start-qemu"
     print_status ""
-    print_status "Or use qemu-manager:"
-    print_status "  $SCRIPT_DIR/qemu-manager.sh start"
+    print_status "Or manually:"
+    print_status "  cd $LIME_PACKAGES_DIR"
+    print_status "  sudo ./tools/qemu_dev_start --libremesh-workdir . $ROOTFS_PATH $KERNEL_PATH"
 fi

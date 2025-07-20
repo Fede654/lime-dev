@@ -1,14 +1,9 @@
 #!/bin/bash
-#
+
 # QEMU LibreMesh Persistent Setup for Testing
-# Migrated from lime-app to lime-dev
-# This script configures QEMU for persistent testing with LibreMesh projects
-#
+# This script configures QEMU for persistent testing with lime-app
 
 set -e
-
-# Get script directory for relative imports
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "🖥️  QEMU LibreMesh Persistent Testing Setup"
 echo "=========================================="
@@ -36,12 +31,9 @@ print_error() {
     echo -e "${RED}✗${NC} $1"
 }
 
-# Configuration (lime-dev structure)
+# Configuration
 QEMU_IP="10.13.0.1"
 PERSISTENT_CONFIG_DIR="/tmp/qemu-lime-persistent"
-LIME_PACKAGES_DIR="$SCRIPT_DIR/../../repos/lime-packages"
-PROJECT_NAME="${PROJECT_NAME:-lime-app}"
-PROJECT_DIR="$SCRIPT_DIR/../../repos/$PROJECT_NAME"
 
 # Check if QEMU is already running
 check_qemu_running() {
@@ -58,27 +50,29 @@ setup_persistent_config() {
     
     mkdir -p "$PERSISTENT_CONFIG_DIR"
     
-    # Create QEMU startup script (lime-dev compatible)
-    cat > "$PERSISTENT_CONFIG_DIR/start-qemu.sh" << EOF
+    # Create QEMU startup script
+    cat > "$PERSISTENT_CONFIG_DIR/start-qemu.sh" << 'EOF'
 #!/bin/bash
-# Persistent QEMU startup for lime-dev testing
+# Persistent QEMU startup for lime-app testing
 
-SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
-LIME_DEV_DIR="$SCRIPT_DIR/../../.."
-QEMU_MANAGER="\$LIME_DEV_DIR/tools/qemu/qemu-manager.sh"
+LIME_PACKAGES_DIR="../lime-packages"
+ROOTFS_IMAGE="$LIME_PACKAGES_DIR/build/libremesh-2020.4-ow19-x86-64-rootfs.tar.gz"
+KERNEL_IMAGE="$LIME_PACKAGES_DIR/build/libremesh-2020.4-ow19-x86-64-ramfs.bzImage"
 
-if [ ! -f "\$QEMU_MANAGER" ]; then
-    echo "ERROR: QEMU manager not found at \$QEMU_MANAGER"
-    echo "Please ensure you're running from lime-dev structure."
+if [ ! -f "$ROOTFS_IMAGE" ] || [ ! -f "$KERNEL_IMAGE" ]; then
+    echo "ERROR: LibreMesh images not found in $LIME_PACKAGES_DIR/build/"
+    echo "Please download the required images first."
     exit 1
 fi
 
-# Start QEMU using lime-dev qemu-manager
-echo "Starting QEMU using lime-dev qemu-manager..."
-"\$QEMU_MANAGER" start
+# Start QEMU with persistent networking
+screen -S libremesh-testing -d -m sudo "$LIME_PACKAGES_DIR/tools/qemu_dev_start" \
+    --libremesh-workdir "$LIME_PACKAGES_DIR" \
+    "$ROOTFS_IMAGE" \
+    "$KERNEL_IMAGE"
 
-echo "QEMU LibreMesh started via lime-dev"
-echo "Access with: telnet localhost 4540 (or check status for exact port)"
+echo "QEMU LibreMesh started in screen session 'libremesh-testing'"
+echo "Access with: screen -r libremesh-testing"
 EOF
     
     chmod +x "$PERSISTENT_CONFIG_DIR/start-qemu.sh"
@@ -93,10 +87,8 @@ echo "Configuring QEMU LibreMesh for testing..."
 # Set root password for testing
 echo -e "admin\nadmin" | passwd root
 
-# Configure network interface (try multiple possibilities)
-ip addr add 10.13.0.1/16 dev br-lan 2>/dev/null || \
-ip addr add 10.13.0.1/16 dev eth0 2>/dev/null || \
-echo "Network interface configuration may need manual setup"
+# Configure network interface
+ip addr add 10.13.0.1/16 dev br-lan 2>/dev/null || true
 
 # Start web server
 /etc/init.d/uhttpd start 2>/dev/null || true
@@ -109,14 +101,14 @@ echo "Network interface configuration may need manual setup"
 mkdir -p /tmp/test-sessions
 echo '{"username":"root","authenticated":true}' > /tmp/test-sessions/test-session.json
 
-# Setup web directories
-mkdir -p /www/app
-chmod 755 /www /www/app
+# Install development packages if available
+# opkg update 2>/dev/null || true
+# opkg install curl 2>/dev/null || true
 
 echo "QEMU LibreMesh configured for testing"
 echo "Web interface: http://10.13.0.1/app"
 echo "Root password: admin"
-echo "Ready for LibreMesh project testing!"
+echo "Ready for lime-app testing!"
 EOF
     
     chmod +x "$PERSISTENT_CONFIG_DIR/configure-qemu.sh"
@@ -136,19 +128,15 @@ configure_running_qemu() {
     
     # Set root password
     print_status "Setting root password to 'admin'..."
-    timeout 5 screen -r libremesh -X stuff "echo -e 'admin\\nadmin' | passwd root$(printf \\r)" 2>/dev/null || true
+    timeout 5 screen -r libremesh-2020 -X stuff "echo -e 'admin\\nadmin' | passwd root$(printf \\r)" 2>/dev/null || true
     
     # Ensure network interface is configured
     print_status "Configuring network interface..."
-    timeout 5 screen -r libremesh -X stuff "ip addr add 10.13.0.1/16 dev eth0 2>/dev/null || ip addr add 10.13.0.1/16 dev br-lan$(printf \\r)" 2>/dev/null || true
+    timeout 5 screen -r libremesh-2020 -X stuff "ip addr add 10.13.0.1/16 dev br-lan$(printf \\r)" 2>/dev/null || true
     
     # Start/restart web server
     print_status "Starting web server..."
-    timeout 5 screen -r libremesh -X stuff "/etc/init.d/uhttpd restart$(printf \\r)" 2>/dev/null || true
-    
-    # Setup web directories
-    print_status "Setting up web directories..."
-    timeout 5 screen -r libremesh -X stuff "mkdir -p /www/app; chmod 755 /www /www/app$(printf \\r)" 2>/dev/null || true
+    timeout 5 screen -r libremesh-2020 -X stuff "/etc/init.d/uhttpd restart$(printf \\r)" 2>/dev/null || true
     
     # Wait for services to start
     sleep 3
@@ -199,7 +187,7 @@ create_systemd_service() {
         
         sudo tee /etc/systemd/system/qemu-libremesh-testing.service > /dev/null << EOF
 [Unit]
-Description=QEMU LibreMesh Testing Environment (lime-dev)
+Description=QEMU LibreMesh Testing Environment
 After=network.target
 
 [Service]
@@ -207,7 +195,7 @@ Type=forking
 User=$USER
 WorkingDirectory=$PWD
 ExecStart=$PERSISTENT_CONFIG_DIR/start-qemu.sh
-ExecStop=$SCRIPT_DIR/qemu-manager.sh stop
+ExecStop=/usr/bin/screen -S libremesh-testing -X quit
 Restart=no
 
 [Install]
@@ -221,15 +209,15 @@ EOF
     fi
 }
 
-# Save current project build for quick deployment
+# Save current lime-app build for quick deployment
 save_current_build() {
-    print_status "Saving current $PROJECT_NAME build..."
+    print_status "Saving current lime-app build..."
     
-    if [ -d "$PROJECT_DIR/build" ]; then
-        cp -r "$PROJECT_DIR/build" "$PERSISTENT_CONFIG_DIR/${PROJECT_NAME}-build"
-        print_success "Current build saved to $PERSISTENT_CONFIG_DIR/${PROJECT_NAME}-build"
+    if [ -d "build" ]; then
+        cp -r build "$PERSISTENT_CONFIG_DIR/lime-app-build"
+        print_success "Current build saved to $PERSISTENT_CONFIG_DIR/lime-app-build"
     else
-        print_warning "No build directory found in $PROJECT_DIR. Build project first."
+        print_warning "No build directory found. Run 'npm run build:production' first."
     fi
 }
 
@@ -238,11 +226,12 @@ quick_deploy() {
     if [ "$1" = "--deploy" ]; then
         print_status "Quick deploying saved build to QEMU..."
         
-        if [ -d "$PERSISTENT_CONFIG_DIR/${PROJECT_NAME}-build" ]; then
-            # Use lime-dev deploy script
+        if [ -d "$PERSISTENT_CONFIG_DIR/lime-app-build" ]; then
+            # Deploy to QEMU via SCP or similar method
             if check_qemu_running; then
-                "$SCRIPT_DIR/deploy-to-qemu.sh" --project "$PROJECT_NAME"
-                print_success "Build deployed to QEMU via lime-dev"
+                # Copy files to a temporary location QEMU can access
+                sudo cp -r "$PERSISTENT_CONFIG_DIR/lime-app-build"/* /tmp/qemu-lime-app/ 2>/dev/null || true
+                print_success "Build deployed to QEMU"
             else
                 print_warning "QEMU not running"
             fi
@@ -261,7 +250,7 @@ main() {
                 configure_running_qemu
                 test_qemu_access
             else
-                print_warning "QEMU not running. Use '$SCRIPT_DIR/qemu-manager.sh start' to start."
+                print_warning "QEMU not running. Use '$PERSISTENT_CONFIG_DIR/start-qemu.sh' to start."
             fi
             save_current_build
             ;;
@@ -288,9 +277,6 @@ main() {
             echo "  --deploy  - Quick deploy saved build"
             echo "  --systemd - Create systemd service"
             echo "  help      - Show this help"
-            echo
-            echo "Environment Variables:"
-            echo "  PROJECT_NAME - Override project name (default: lime-app)"
             ;;
         *)
             echo "Unknown command: $1"
