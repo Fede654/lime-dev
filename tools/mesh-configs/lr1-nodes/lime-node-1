@@ -1,0 +1,54 @@
+# LibreRouter v1 Node Configuration - Node 1
+# Generated for TestMesh mesh network
+# Hardware: LR1 with 3 radios (1x2.4GHz + 2x5GHz)
+# 
+# Radio Configuration:
+# - Radio0 (2.4GHz wmac): AP + Mesh, minimal power
+# - Radio1 (5GHz PCIe0): Mesh only, minimal power
+# - Radio2 (5GHz PCIe1): DISABLED
+#
+# Expected Node IP: 10.13.0.1 (if MAC ends in 00:01)
+
+config lime 'system'
+	option hostname 'LR1-TestMesh-001'
+	option domain 'mesh.local'
+	option keep_on_upgrade 'libremesh base-files-essential /etc/sysupgrade.conf'
+
+# Radio0: 2.4GHz built-in radio (wmac) - AP + Mesh
+config wifi radio0
+	option modes 'ap adhoc'
+	option ap_ssid 'TestMesh.org'
+	option ap_key 'TestMesh2024!'
+	option ap_encryption 'psk2'
+	option adhoc_ssid 'TestMesh-mesh'
+	option adhoc_bssid 'ca:fe:00:c0:ff:ee'
+	option adhoc_mcast_rate_2ghz '24000'
+	option distance_2ghz '1000'
+	option channel_2ghz '1'
+	option txpower '10'  # Minimal power (10 dBm)
+
+# Radio1: 5GHz PCIe radio 1 - Mesh only
+config wifi radio1
+	option modes 'adhoc'
+	option adhoc_ssid 'TestMesh-mesh'
+	option adhoc_bssid 'ca:fe:00:c0:ff:ee'
+	option adhoc_mcast_rate_5ghz '6000'
+	option distance_5ghz '1000'
+	option channel_5ghz '36'
+	option txpower '10'  # Minimal power (10 dBm)
+
+# Radio2: 5GHz PCIe radio 2 - DISABLED
+config wifi radio2
+	option modes ''  # Empty modes = disabled
+
+# Gateway configuration for Node 1
+config lime 'proto' 'batadv'
+	option gw_mode 'client'  # All nodes as clients initially
+	option gw_sel_class '20'
+
+# Node-specific network tweaks
+config lime 'network'
+	# Use lower DHCP range offset for this node
+	option anygw_dhcp_start '12'
+	option anygw_dhcp_limit '8'
+
