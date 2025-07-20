@@ -1,0 +1,195 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [ main, development ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run security scan daily at 3 AM UTC
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      scan_type:
+        description: 'Type of security scan'
+        required: true
+        default: 'full'
+        type: choice
+        options:
+        - quick
+        - full
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        # Fetch full history for comprehensive scanning
+        fetch-depth: 0
+        # Include submodules (our repos)
+        submodules: recursive
+
+    - name: Setup dependencies
+      run: |
+        # Install ripgrep for pattern matching
+        sudo apt-get update
+        sudo apt-get install -y ripgrep
+        
+        # Verify tools
+        rg --version
+
+    - name: Run security scan
+      id: security_scan
+      run: |
+        # Determine scan type
+        SCAN_TYPE="${{ github.event.inputs.scan_type || 'full' }}"
+        
+        if [[ "$SCAN_TYPE" == "quick" ]]; then
+          echo "Running quick security scan..."
+          ./scripts/security/scan-secrets.sh --quick
+        else
+          echo "Running full security scan..."
+          ./scripts/security/scan-secrets.sh
+        fi
+      continue-on-error: true
+
+    - name: Check for security issues
+      run: |
+        # Re-run scan in fail-fast mode for proper exit codes
+        SCAN_TYPE="${{ github.event.inputs.scan_type || 'full' }}"
+        
+        if [[ "$SCAN_TYPE" == "quick" ]]; then
+          ./scripts/security/scan-secrets.sh --quick --fail-fast
+        else
+          ./scripts/security/scan-secrets.sh --fail-fast
+        fi
+
+    - name: Upload security scan results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: security-scan-results-${{ github.sha }}
+        path: |
+          security-*.log
+          *.json
+        retention-days: 30
+
+  security-gate:
+    runs-on: ubuntu-latest
+    needs: security-scan
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+    - name: Critical security check
+      run: |
+        echo "🔍 Running critical security check for PR..."
+        
+        # Only check for the most critical issues in PRs
+        CRITICAL_ISSUES=0
+        
+        # Check for hardcoded secrets
+        if rg -i "api[_-]?key\s*[=:]\s*['\"][^'\"]{8,}['\"]|secret[_-]?key\s*[=:]\s*['\"][^'\"]{8,}['\"]" . --type-not binary -c | awk '{sum+=$1} END {print sum+0}' | grep -v "^0$"; then
+          echo "❌ Critical: API keys or secrets detected"
+          CRITICAL_ISSUES=$((CRITICAL_ISSUES + 1))
+        fi
+        
+        # Check for SSH keys
+        if rg -i "BEGIN.*PRIVATE KEY|ssh-rsa|ssh-ed25519" . --type-not binary -c | awk '{sum+=$1} END {print sum+0}' | grep -v "^0$"; then
+          echo "❌ Critical: SSH key material detected"
+          CRITICAL_ISSUES=$((CRITICAL_ISSUES + 1))
+        fi
+        
+        # Check for LibreMesh default passwords
+        if rg -i "toorlibre1|admin.*123" . --type-not binary -c | awk '{sum+=$1} END {print sum+0}' | grep -v "^0$"; then
+          echo "⚠️  Warning: Default credentials detected"
+        fi
+        
+        if [[ $CRITICAL_ISSUES -gt 0 ]]; then
+          echo "🚨 PR blocked: Critical security issues found"
+          echo "Please remove hardcoded secrets before merging"
+          exit 1
+        else
+          echo "✅ No critical security issues detected in PR"
+        fi
+
+  dependency-check:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'schedule'
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Check lime-app dependencies
+      if: always()
+      run: |
+        if [[ -f "repos/lime-app/package.json" ]]; then
+          echo "🔍 Checking lime-app dependencies..."
+          cd repos/lime-app
+          
+          # Install dependencies
+          npm install --audit-level=moderate
+          
+          # Run security audit
+          npm audit --audit-level=moderate || true
+          
+          # Generate audit report
+          npm audit --json > ../../lime-app-audit.json || true
+        else
+          echo "ℹ️  lime-app package.json not found, skipping dependency check"
+        fi
+
+    - name: Upload dependency audit results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: dependency-audit-${{ github.sha }}
+        path: |
+          *-audit.json
+        retention-days: 30
+
+  notify-results:
+    runs-on: ubuntu-latest
+    needs: [security-scan, dependency-check]
+    if: always() && (github.event_name == 'schedule' || failure())
+    
+    steps:
+    - name: Security scan summary
+      run: |
+        echo "## 🛡️ Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+        echo "- **Repository**: ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Trigger**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [[ "${{ needs.security-scan.result }}" == "success" ]]; then
+          echo "✅ **Security Scan**: Passed" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **Security Scan**: Failed or found issues" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        if [[ "${{ needs.dependency-check.result }}" == "success" ]]; then
+          echo "✅ **Dependency Check**: Passed" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **Dependency Check**: Failed or found vulnerabilities" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "📊 **Artifacts**: Check the uploaded scan results for details" >> $GITHUB_STEP_SUMMARY
