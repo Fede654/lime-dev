@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Lime-Dev - Main Command Interface
-# Unified entry point for all lime-dev operations including AI tools, verification, and upstream management
+# Unified entry point for all lime-dev operations including security tools, verification, and upstream management
 #
 
 set -e
@@ -9,6 +9,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 LIME_DEV_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TOOLS_DIR="$LIME_DEV_ROOT/tools"
+SCRIPTS_DIR="$LIME_DEV_ROOT/scripts"
 
 print_info() {
     echo "[INFO] $1"
@@ -28,7 +29,7 @@ Main Commands:
     setup           Setup and configure development environment
     build           Build LibreRouterOS firmware
     verify          Verify environment and platform setup
-    ai              AI-powered development tools
+    security        Security scanning and validation tools
     upstream        Upstream contribution management
     qemu            QEMU virtualization management
     upgrade         LibreRouter v1 upgrade utility (safe-upgrade + optional firmware)
@@ -77,12 +78,10 @@ Mesh Network Management:
     lime mesh status testmesh           # Check mesh network status
     lime mesh verify testmesh           # Verify mesh connectivity
 
-AI Development Tools:
-    lime ai review --repo lime-app      # AI code review
-    lime ai docs --repo all             # Documentation analysis
-    lime ai quality --repo lime-packages # Quality assessment
-    lime ai security --repo all         # Security scan
-    lime ai test --repo lime-app        # Test validation
+Security Tools:
+    lime security scan                  # Full security scan
+    lime security scan --quick          # Quick security check
+    lime security scan repos/lime-app   # Scan specific repository
 
 Upstream Contribution:
     lime upstream setup                 # Configure upstream remotes
@@ -105,7 +104,7 @@ Examples:
     lime setup install                 # Initial setup with dependency analysis
     lime setup graph                   # Comprehensive dependency visualization  
     lime verify all                    # Verify complete environment
-    lime ai review --repo lime-app     # Code review for lime-app
+    lime security scan --quick         # Quick security check
     lime build                         # Build firmware
     lime qemu start                     # Start development QEMU
     lime upgrade                       # Update safe-upgrade only (thisnode.info)
@@ -115,7 +114,7 @@ Examples:
 Directory Structure:
     scripts/                  # Core scripts
     tools/                   # Development tools
-    ├── ai/                 # AI-powered analysis tools
+    ├── security/           # Security scanning tools
     ├── verify/             # Environment verification
     ├── upstream/           # Upstream contribution tools
     └── qemu/               # QEMU management tools
@@ -128,55 +127,45 @@ For more help on specific commands:
 EOF
 }
 
-# AI tools dispatcher
-run_ai_command() {
-    local ai_command="${1:-help}"
+# Security tools dispatcher
+run_security_command() {
+    local security_command="${1:-help}"
     shift || true
     
-    case "$ai_command" in
-        review)
-            exec "$TOOLS_DIR/ai/code-review.sh" "$@"
-            ;;
-        docs)
-            exec "$TOOLS_DIR/ai/docs-check.sh" "$@"
-            ;;
-        quality)
-            exec "$TOOLS_DIR/ai/quality-check.sh" "$@"
-            ;;
-        security)
-            exec "$TOOLS_DIR/ai/security-scan.sh" "$@"
-            ;;
-        test)
-            exec "$TOOLS_DIR/ai/test-validation.sh" "$@"
+    case "$security_command" in
+        scan)
+            exec "$SCRIPTS_DIR/security/simple-scan.sh" "$@"
             ;;
         help|-h|--help)
             cat << 'EOF'
-AI Development Tools
+Security Scanning Tools
 
-Usage: lime ai <command> [options]
+Usage: lime security <command> [options]
 
 Commands:
-    review      Code review analysis
-    docs        Documentation validation
-    quality     Quality assessment
-    security    Security vulnerability scan
-    test        Test coverage validation
-
-Common options:
-    --repo <name>       Repository to analyze (lime-app, lime-packages, librerouteros, all)
-    --output <file>     Output file for results
-    --format <format>   Output format (text, json, markdown)
-    --verbose           Enable verbose output
+    scan                Full security scan of lime-dev project
+    scan --quick        Quick scan (secrets only)
+    scan <path>         Scan specific directory
+    scan --fail-fast    Exit with error if issues found (for CI/CD)
 
 Examples:
-    lime ai review --repo lime-app
-    lime ai security --repo all --format json
-    lime ai quality --repo lime-packages --verbose
+    lime security scan                    # Full security scan
+    lime security scan --quick            # Quick security check
+    lime security scan repos/lime-app     # Scan specific repository
+    lime security scan --fail-fast       # For CI/CD integration
+
+The security scanner checks for:
+    • Hardcoded API keys and secrets
+    • LibreMesh default credentials
+    • Dangerous code patterns
+    • File permission issues
+    • SSH key material
+    • Insecure protocols
 EOF
             ;;
         *)
-            print_error "Unknown AI command: $ai_command"
-            run_ai_command "help"
+            print_error "Unknown security command: $security_command"
+            run_security_command "help"
             exit 1
             ;;
     esac
@@ -351,9 +340,9 @@ main() {
             shift
             run_verify_command "$@"
             ;;
-        ai)
+        security)
             shift
-            run_ai_command "$@"
+            run_security_command "$@"
             ;;
         upstream)
             shift
