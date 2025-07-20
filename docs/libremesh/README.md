@@ -6,6 +6,7 @@ This directory contains comprehensive developer documentation for LibreMesh mesh
 
 ### Core LibreMesh Concepts
 - **[Hierarchical Configuration System](HIERARCHICAL-CONFIGURATION.md)** - Multi-level configuration management with priority-based merging
+- **[IP Allocation System](IP-ALLOCATION.md)** - MAC-based automatic IP assignment and network architecture
 - **[Architecture Overview](ARCHITECTURE.md)** *(planned)* - LibreMesh system architecture and components
 - **[Mesh Networking Protocols](MESH-PROTOCOLS.md)** *(planned)* - BATMAN-adv, Babel, and routing protocols
 
@@ -28,18 +29,20 @@ This directory contains comprehensive developer documentation for LibreMesh mesh
 
 ### For New Developers
 1. Start with [Hierarchical Configuration System](HIERARCHICAL-CONFIGURATION.md) to understand LibreMesh configuration management
-2. Review the main [lime-dev README](../../README.md) for development environment setup
-3. Check [lime-dev DEVELOPMENT](../DEVELOPMENT.md) for build system and workflow
+2. Read [IP Allocation System](IP-ALLOCATION.md) to understand network architecture and node addressing
+3. Review the main [lime-dev README](../../README.md) for development environment setup
+4. Check [lime-dev DEVELOPMENT](../DEVELOPMENT.md) for build system and workflow
 
 ### For Community Administrators  
 1. Read [Hierarchical Configuration System](HIERARCHICAL-CONFIGURATION.md) sections on community configuration
-2. Refer to lime-dev [upgrade scripts](../../scripts/core/upgrade-legacy-router.sh) for device management
-3. Use lime-dev [patch system](../../patches/) for community-specific modifications
+2. Study [IP Allocation System](IP-ALLOCATION.md) for network planning and IP range management
+3. Refer to lime-dev [upgrade scripts](../../scripts/core/upgrade-legacy-router.sh) for device management
+4. Use lime-dev [patch system](../../patches/) for community-specific modifications
 
 ### For Mesh Network Operators
-1. Understand configuration hierarchy for network-wide settings
-2. Learn about device-specific and node-specific customizations
-3. Explore automated deployment and management tools in lime-dev
+1. Understand [IP Allocation System](IP-ALLOCATION.md) for network deployment and troubleshooting
+2. Learn about device-specific and node-specific customizations via configuration hierarchy
+3. Explore automated deployment and management tools in lime-dev [mesh configs](../../tools/mesh-configs/)
 
 ## 🔗 Related Documentation
 

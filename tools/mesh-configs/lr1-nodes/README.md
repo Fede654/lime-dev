@@ -70,6 +70,8 @@ ssh root@10.13.0.1 "lime-config && /etc/init.d/network restart"
 
 Node IPs are calculated from MAC addresses: 10.13.{MAC5}.{MAC6}
 
+For detailed IP allocation behavior, see: [docs/libremesh/IP-ALLOCATION.md](../../../docs/libremesh/IP-ALLOCATION.md)
+
 If routers have sequential MACs ending in 00:01, 00:02, etc:
 - Node 1: 10.13.0.1 (if MAC ends in 00:01)
 - Node 2: 10.13.0.2 (if MAC ends in 00:02)

@@ -1,7 +1,10 @@
 #!/bin/bash
 #
 # LibreRouter v1 Node Configuration Generator
-# Generates individual lime-node files for TestMesh deployment
+# Generates individual lime-node files for mesh deployment
+#
+# For LibreMesh IP allocation details, see:
+# docs/libremesh/IP-ALLOCATION.md
 #
 
 set -e
