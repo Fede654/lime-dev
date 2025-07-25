@@ -37,6 +37,8 @@ Main Commands:
     deps            Show dependency graph
     clean [TYPE]    Clean build artifacts
                     Types: all (default), build, downloads, outputs
+    reset [OPTIONS] Reset repositories to clean state (preserves lime-app)
+                    Options: --preserve-lime-app (default), --all, --dry-run
     patches         Manage custom patches for LibreMesh packages
     mesh            Deploy and manage LibreMesh mesh network configurations
 
@@ -58,6 +60,9 @@ Build Commands:
     lime clean build                    # Clean only build directory (2.3GB)
     lime clean downloads                # Clean only downloads cache (854MB)  
     lime clean outputs                  # Clean only binary outputs (4MB)
+    lime reset                          # Reset repos to clean state (preserves lime-app)
+    lime reset --all                    # Reset ALL repos including lime-app
+    lime reset --dry-run                # Show what would be reset without doing it
 
 Verification Commands:
     lime verify all                     # Complete environment verification
@@ -368,6 +373,10 @@ main() {
             else
                 exec "$SCRIPT_DIR/build.sh" --clean
             fi
+            ;;
+        reset)
+            shift
+            exec "$SCRIPT_DIR/core/reset.sh" "$@"
             ;;
         patches)
             shift
