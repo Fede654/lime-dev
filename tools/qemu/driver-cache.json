@@ -1,0 +1,66 @@
+{
+  "version": "1.0",
+  "last_updated": "2025-01-20",
+  "kernels": {
+    "5.15.167": {
+      "openwrt_version": "23.05.5",
+      "status": "cached",
+      "drivers": {
+        "kmod-e1000": {
+          "file": "kmod-e1000_5.15.167-1_x86_64.ipk",
+          "extracted": "e1000.ko",
+          "status": "downloaded",
+          "download_date": "2025-01-20"
+        },
+        "kmod-e1000e": {
+          "file": "kmod-e1000e_5.15.167-1_x86_64.ipk",
+          "extracted": "e1000e.ko", 
+          "status": "downloaded",
+          "download_date": "2025-01-20"
+        },
+        "kmod-8139too": {
+          "file": "kmod-8139too_5.15.167-1_x86_64.ipk",
+          "extracted": "8139too.ko",
+          "status": "downloaded", 
+          "download_date": "2025-01-20"
+        },
+        "kmod-virtio-net": {
+          "file": "kmod-virtio-net_5.15.167-1_x86_64.ipk",
+          "extracted": "virtio_net.ko",
+          "status": "needed",
+          "download_date": null
+        }
+      },
+      "injection_history": [
+        {
+          "date": "2025-01-20",
+          "method": "console",
+          "result": "partial_success",
+          "notes": "modprobe syntax issues with OpenWrt 23.05"
+        }
+      ]
+    },
+    "6.6.86": {
+      "openwrt_version": "snapshot",
+      "status": "native_support", 
+      "drivers": {
+        "e1000": {"status": "built_in"},
+        "e1000e": {"status": "built_in"},
+        "virtio_net": {"status": "built_in"}
+      },
+      "injection_history": []
+    }
+  },
+  "feeds": {
+    "openwrt_23.05.5": {
+      "base_url": "https://downloads.openwrt.org/releases/23.05.5/targets/x86/64/packages",
+      "last_checked": "2025-01-20",
+      "status": "working"
+    },
+    "openwrt_snapshot": {
+      "base_url": "https://downloads.openwrt.org/snapshots/targets/x86/64/packages", 
+      "last_checked": "2025-01-20",
+      "status": "intermittent"
+    }
+  }
+}

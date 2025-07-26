@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+#
+# Quick diagnostic launcher for QEMU LibreMesh instances
+#
+# Usage: ./diagnose [--verbose|--json]
+#
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DIAG_SCRIPT="$SCRIPT_DIR/qemu-diagnostics.sh"
+
+if [[ ! -f "$DIAG_SCRIPT" ]]; then
+    echo "Error: Diagnostic script not found at $DIAG_SCRIPT" >&2
+    exit 1
+fi
+
+# Pass all arguments directly to the diagnostic script
+exec "$DIAG_SCRIPT" "$@"

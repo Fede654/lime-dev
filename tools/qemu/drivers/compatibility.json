@@ -1,0 +1,12 @@
+{
+    "6.6.86": {
+        "source_image": "libremesh-ca63283-24.10.1-dev",
+        "drivers": ["e1000.ko", "e1000e.ko"],
+        "status": "verified_working"
+    },
+    "5.15.167": {
+        "source_image": "none",
+        "drivers": [],
+        "status": "requires_injection"
+    }
+}
