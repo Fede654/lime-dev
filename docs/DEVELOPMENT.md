@@ -4,10 +4,13 @@
 
 ```bash
 # Setup complete environment
-./lime setup install
+./lime setup
 
-# Build LibreRouterOS firmware
+# Build LibreRouterOS firmware (using configured sources)
 ./lime build configs/example_config_librerouter
+
+# Build with local development sources
+./lime build --local configs/example_config_librerouter
 
 # Start QEMU development environment
 ./lime qemu start
@@ -23,7 +26,10 @@
 1. **Environment Setup** (once)
    ```bash
    # Complete setup
-   ./lime setup install
+   ./lime setup
+   
+   # Setup for build-remote-only (tagged releases)
+   ./lime setup --build-remote-only
    
    # Verify environment
    ./lime verify all
@@ -42,7 +48,10 @@
 
 3. **Build and Test**
    ```bash
-   # Build firmware
+   # Build firmware with local sources (development)
+   ./lime build --local configs/example_config_x86_64
+   
+   # Build firmware with configured sources (production)
    ./lime build configs/example_config_x86_64
    
    # Test in QEMU
@@ -131,14 +140,18 @@
 ### Native Builds
 
 ```bash
-# Build for different targets
+# Build for different targets (using configured sources)
 ./lime build configs/example_config_x86_64         # Virtual machines
 ./lime build configs/example_config_librerouter    # LibreRouter hardware
+
+# Build with local development sources
+./lime build --local configs/example_config_x86_64
+./lime build --local configs/example_config_librerouter
 
 # Custom build options
 export JOBS=$(nproc)                                # Use all CPU cores
 export V=s                                          # Verbose output
-./lime build configs/example_config_x86_64
+./lime build --local configs/example_config_x86_64
 ```
 
 ### Docker Builds
@@ -159,8 +172,11 @@ docker system prune -a
 cp configs/example_config_x86_64 configs/my_config
 vim configs/my_config
 
-# Build with custom config
+# Build with custom config (configured sources)
 ./lime build configs/my_config
+
+# Build with custom config (local sources)
+./lime build --local configs/my_config
 ```
 
 ## QEMU Development
@@ -220,7 +236,7 @@ sudo ip link delete lime_br0 2>/dev/null || true
 
 # Reset environment
 ./lime clean              # Clean build artifacts
-./lime update            # Update repositories
+./lime update            # Update repositories (alias for 'lime setup update')
 ```
 
 ### Dependency Management
@@ -230,7 +246,10 @@ sudo ip link delete lime_br0 2>/dev/null || true
 ./lime setup check
 
 # Install missing dependencies
-./lime setup install
+./lime setup
+
+# Install for build-remote-only mode
+./lime setup --build-remote-only
 
 # Platform-specific installation
 # Ubuntu/Debian: apt-get
@@ -241,7 +260,7 @@ sudo ip link delete lime_br0 2>/dev/null || true
 ### Repository Management
 
 ```bash
-# Update all repositories
+# Update all repositories (alias for 'lime setup update')
 ./lime update
 
 # Manual repository updates
@@ -353,9 +372,9 @@ cd repos/lime-packages
 git checkout -b my-feature-branch
 
 # Edit packages/my-package/
-# Test changes
+# Test changes with local sources
 cd ../../
-./lime build configs/example_config_x86_64
+./lime build --local configs/example_config_x86_64
 ./lime qemu start
 
 # Commit and push
