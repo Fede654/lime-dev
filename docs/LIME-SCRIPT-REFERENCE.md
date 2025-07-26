@@ -140,27 +140,28 @@ lime build --clean [type]
         └── "outputs": rm -rf build/bin/ (4MB)
 ```
 
-### 3. REBUILD COMMANDS (Development Speed Optimization)
+### 3. REBUILD COMMANDS (3-Stage Development Workflow)
 
 #### `lime rebuild` [type] [options]
 ```
 lime rebuild [type]
 ├── scripts/lime:361-372 -> case dispatch
 ├── detect rebuild type (lime-app|incremental|selective)
+├── default: lime-app (Stage 2 development - most common)
 └── exec scripts/rebuild.sh [type]
     ├── main() -> parse_arguments()
     ├── check_initial_build_required()
     ├── apply_local_sources()
     │   └── scripts/utils/package-source-injector.sh apply local
     └── case rebuild_type:
-        ├── "lime-app": rebuild_lime_app_only()
-        ├── "incremental": rebuild_lime_packages()
-        └── "selective": rebuild_specific_package()
+        ├── "lime-app": rebuild_lime_app_only() (Stage 2)
+        ├── "incremental": rebuild_lime_packages() (Stage 3)
+        └── "selective": rebuild_specific_package() (Custom)
 ```
 
-#### `lime rebuild lime-app` [--multi]
+#### `lime rebuild lime-app` [--multi] - Stage 2 Development
 ```
-lime rebuild lime-app
+lime rebuild lime-app (or just: lime rebuild)
 ├── scripts/lime:365 -> exec scripts/rebuild.sh lime-app
 └── scripts/rebuild.sh -> rebuild_lime_app_only()
     ├── check_initial_build_required()
@@ -175,9 +176,9 @@ lime rebuild lime-app
     └── show_deployment_options()
 ```
 
-#### `lime rebuild incremental` [--multi]
+#### `lime rebuild incremental` [--multi] - Stage 3 Development
 ```
-lime rebuild incremental
+lime rebuild incremental [--multi]
 ├── scripts/lime:370 -> exec scripts/rebuild.sh incremental
 └── scripts/rebuild.sh -> rebuild_lime_packages()
     ├── check_initial_build_required()
@@ -188,7 +189,7 @@ lime rebuild incremental
     │   ├── make package/feeds/libremesh/$pkg/compile
     │   └── verify_package_creation()
     ├── generate_firmware_image():
-    │   ├── if --multi: make -j$(nproc) (3-8 min, risky)
+    │   ├── if --multi: make -j$(nproc) (3-8 min, best performance)
     │   └── else: make target/linux/install (5-10 min, safe)
     └── show_results()
 ```
@@ -216,16 +217,19 @@ lime rebuild selective --package shared-state
     └── show_results()
 ```
 
-#### `lime rebuild-fast` [--multi]
+#### `lime rebuild-fast` [--multi] - Alias for Stage 2
 ```
 lime rebuild-fast
 ├── scripts/lime:375 -> exec scripts/rebuild.sh lime-app
-└── (Same as lime rebuild lime-app)
+└── (Same as lime rebuild lime-app - Stage 2 Development)
 ```
 
-**Rebuild Options:**
+**3-Stage Development Options:**
+- **Stage 1**: `lime build --local` (initial full build)
+- **Stage 2**: `lime rebuild` (lime-app development - default)
+- **Stage 3**: `lime rebuild incremental --multi` (all packages, best performance)
 - `--local`: Force local sources (automatically applied)
-- `--multi`: Use multi-threaded firmware generation (faster but risky)
+- `--multi`: Use multi-threaded firmware generation (recommended for Stage 3)
 - `--package PKG`: Specific package to rebuild (use with selective)
 
 ### 4. VERIFICATION COMMANDS
@@ -513,11 +517,16 @@ tools/
 
 ## Performance Characteristics
 
-### Build Times
-- **Full build**: 15-45 minutes (everything from scratch)
-- **lime rebuild incremental**: 5-10 minutes (packages + optimized target build)
-- **lime rebuild lime-app**: 3-8 minutes (lime-app + optimized target build)
-- **lime rebuild --multi**: 2-8 minutes (multi-threaded, risky)
+### 3-Stage Development Build Times
+- **Stage 1 - lime build --local**: 15-45 minutes (initial full build)
+- **Stage 2 - lime rebuild**: 3-8 minutes (lime-app development)
+- **Stage 3 - lime rebuild incremental --multi**: 3-8 minutes (all packages, best performance)
+
+### Build Time Comparison
+- **lime rebuild**: 3-8 minutes (Stage 2, most common)
+- **lime rebuild --multi**: 2-5 minutes (Stage 2 with multi-threading, risky)
+- **lime rebuild incremental**: 5-10 minutes (Stage 3, safe)
+- **lime rebuild incremental --multi**: 3-8 minutes (Stage 3, recommended)
 
 ### Clean Operation Sizes
 - **lime clean all**: 3.2GB (complete cleanup)

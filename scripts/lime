@@ -28,8 +28,8 @@ Usage: $0 <command> [options]
 Main Commands:
     setup           Setup and configure development environment
     build           Build LibreRouterOS firmware
-    rebuild         Smart incremental rebuild (packages only)
-    rebuild-fast    Ultra-fast lime-app only rebuild
+    rebuild [type]  3-stage development rebuild (lime-app|incremental|selective)
+    rebuild-fast    Stage 2 alias: lime-app development rebuild
     dev-cycle       Complete development cycle (rebuild + deploy to QEMU)
     verify          Verify environment and platform setup
     security        Security scanning and validation tools
@@ -53,8 +53,8 @@ Setup Commands:
     lime setup graph                    # Comprehensive dependency analysis
     lime setup graph --export-dot       # Export professional dependency graph
 
-Build Commands:
-    lime build                          # Native build with configured sources (default: librerouter-v1)
+Build Commands (3 Development Stages):
+    lime build                          # Stage 1: Initial full build (15-45 minutes)
     lime build --local                  # Build with local development sources
     lime build x86_64                   # Build for x86_64 (QEMU/VM/PC)
     lime build --local x86_64           # Build x86_64 with local sources
@@ -63,10 +63,15 @@ Build Commands:
     lime build native --download-only   # Download dependencies only
     lime build --clean                  # Clean build environment
 
-Incremental Rebuild Commands (Development Speed Optimization):
-    lime rebuild                        # Smart incremental: lime-packages only (1-3 minutes)
-    lime rebuild-fast                   # Ultra-fast: lime-app only (10-30 seconds)
+Rebuild Commands (Development Speed Optimization):
+    lime rebuild                        # Stage 2: lime-app development (3-8 minutes)
+    lime rebuild lime-app               # Stage 2: lime-app development (3-8 minutes)
+    lime rebuild incremental            # Stage 3: all lime-packages (5-10 minutes)
+    lime rebuild incremental --multi    # Stage 3: all lime-packages multi-core (3-8 minutes)
+    lime rebuild-fast                   # Alias for lime rebuild lime-app
     lime rebuild selective --package shared-state  # Specific package rebuild
+
+Clean Commands:
     lime clean                          # Clean all build artifacts (3.2GB)
     lime clean build                    # Clean only build directory (2.3GB)
     lime clean downloads                # Clean only downloads cache (854MB)  
@@ -116,16 +121,20 @@ Legacy Router Update:
     lime upgrade 10.13.0.1            # Update safe-upgrade on specific IP
     lime upgrade 10.13.0.1 firmware.bin    # Complete upgrade on specific router
 
-Examples:
+Development Workflow Examples:
+    # Initial setup
     lime setup                         # Initial setup for development
     lime setup --build-remote-only     # Setup for CI/CD builds
-    lime setup graph                   # Comprehensive dependency visualization  
     lime verify all                    # Verify complete environment
+    
+    # 3-Stage Development Process
+    lime build --local                 # Stage 1: Initial full build (15-45 min)
+    lime rebuild                       # Stage 2: lime-app development (3-8 min)
+    lime rebuild incremental --multi   # Stage 3: all lime-packages multi-core (3-8 min)
+    
+    # Additional commands
+    lime setup graph                   # Comprehensive dependency visualization  
     lime security scan --quick         # Quick security check
-    lime build                         # Build firmware with configured sources
-    lime build --local                 # Build firmware with local sources
-    lime rebuild                       # Smart incremental rebuild (packages only, 1-3 min)
-    lime rebuild-fast                  # Ultra-fast lime-app only (10-30 sec)
     lime qemu start                     # Start development QEMU
     lime upgrade                       # Update safe-upgrade only (thisnode.info)
     lime upgrade firmware.bin          # Update safe-upgrade + firmware
@@ -358,7 +367,16 @@ main() {
             ;;
         rebuild)
             shift
-            exec "$SCRIPT_DIR/rebuild.sh" incremental "$@"
+            # Check if first argument is a rebuild type
+            case "${1:-lime-app}" in
+                lime-app|incremental|selective)
+                    exec "$SCRIPT_DIR/rebuild.sh" "$@"
+                    ;;
+                *)
+                    # Default to lime-app if no valid type provided (fastest development iteration)
+                    exec "$SCRIPT_DIR/rebuild.sh" lime-app "$@"
+                    ;;
+            esac
             ;;
         rebuild-fast)
             shift

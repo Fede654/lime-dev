@@ -29,9 +29,9 @@ LibreMesh Incremental Rebuild - Development Speed Optimization
 
 Usage: $0 <rebuild_type> [options]
 
-Rebuild Types:
-    lime-app       Ultra-fast: Only rebuild lime-app (3-8 minutes)
-    incremental    Smart: Rebuild lime-packages only (5-10 minutes)
+Rebuild Types (3-Stage Development):
+    lime-app       Stage 2: lime-app development (3-8 minutes) 
+    incremental    Stage 3: all lime-packages (5-10 minutes)
     selective      Custom: Rebuild specific packages
     
 Options:
@@ -40,16 +40,17 @@ Options:
     --package PKG  Specific package to rebuild (use with selective)
     --help         Show this help
 
-Examples:
-    $0 lime-app                    # Fastest: Just lime-app (optimized target build)
-    $0 lime-app --multi           # Fastest + multi-threaded firmware generation
-    $0 incremental                 # All lime-packages
-    $0 selective --package shared-state  # Specific package only
+Examples (3-Stage Development):
+    $0 lime-app                    # Stage 2: lime-app development (default)
+    $0 lime-app --multi           # Stage 2: + multi-threaded (2-5 min, risky)
+    $0 incremental                 # Stage 3: all lime-packages
+    $0 incremental --multi        # Stage 3: + multi-threaded (best performance)
+    $0 selective --package shared-state  # Custom: specific package only
 
-Speed Comparison:
-    Full build:        15-45 minutes (complete rebuild)
-    lime rebuild:      5-10 minutes  (packages + optimized target build)
-    lime rebuild-fast: 3-8 minutes   (lime-app + optimized target build)
+Development Workflow:
+    Stage 1: lime build --local   # Initial full build (15-45 minutes)
+    Stage 2: lime rebuild         # lime-app development (3-8 minutes)
+    Stage 3: lime rebuild incremental --multi # All packages (3-8 minutes)
 
 EOF
 }
@@ -100,9 +101,9 @@ check_initial_build_required() {
         print_info "   ./lime build --local librerouter-v1"
         print_info "   ./lime build --local x86_64"
         echo ""
-        print_info "After the initial build, you can use fast rebuilds:"
-        print_info "   ./lime rebuild-fast    (10-30 seconds)"
-        print_info "   ./lime rebuild         (1-3 minutes)"
+        print_info "After the initial build, you can use the 3-stage development workflow:"
+        print_info "   ./lime rebuild         (3-8 minutes, lime-app development)"
+        print_info "   ./lime rebuild incremental --multi (3-8 minutes, all packages)"
         exit 1
     fi
 }
@@ -181,7 +182,7 @@ rebuild_lime_app_only() {
 # Rebuild all lime-packages (incremental)
 rebuild_lime_packages() {
     local multi_threaded="${1:-false}"
-    print_info "📦 Smart incremental rebuild (lime-packages)"
+    print_info "📦 Stage 3: All lime-packages rebuild"
     
     check_initial_build_required
     
@@ -327,15 +328,15 @@ rebuild_specific_package() {
 show_time_estimates() {
     cat << EOF
 
-⏱️  Build Time Estimates:
-   Full build:        15-45 minutes (everything from scratch)
-   lime rebuild:      5-10 minutes  (all lime-packages + optimized target build)  
-   lime rebuild-fast: 3-8 minutes   (lime-app + optimized target build)
+⏱️  3-Stage Development Workflow:
+   Stage 1: lime build --local      15-45 minutes (initial full build)
+   Stage 2: lime rebuild            3-8 minutes   (lime-app development)  
+   Stage 3: lime rebuild incremental --multi  3-8 minutes (all packages, best performance)
 
 💡 Development Tips:
-   - Use 'lime rebuild-fast' for lime-app UI changes
-   - Use 'lime rebuild' for lime-packages changes
-   - Add '--multi' for faster but riskier multi-threaded builds
+   - Stage 2 for lime-app UI/frontend changes (most common)
+   - Stage 3 for lime-packages backend changes
+   - Add '--multi' for best performance (incremental builds)
    - Keep downloads cache with: 'lime clean build' (not 'lime clean all')
    - Use QEMU for testing: 'lime qemu start'
 

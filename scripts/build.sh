@@ -97,7 +97,7 @@ confirm_build_override() {
             print_info "Alternative options:"
             print_info "• Use 'lime clean' to selectively clean build artifacts"
             print_info "• Backup existing firmware: cp build/bin/targets/*/*.bin ~/firmware-backup/"
-            print_info "• Use incremental rebuild: 'lime rebuild' or 'lime rebuild-fast'"
+            print_info "• Use 3-stage development: 'lime rebuild' (Stage 2) or 'lime rebuild incremental --multi' (Stage 3)"
             exit 0
         fi
         
