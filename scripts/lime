@@ -121,6 +121,9 @@ Legacy Router Update:
     lime upgrade 10.13.0.1            # Update safe-upgrade on specific IP
     lime upgrade 10.13.0.1 firmware.bin    # Complete upgrade on specific router
 
+Quick Install:
+    lime --install                     # Install lime command system-wide via symlink
+
 Development Workflow Examples:
     # Initial setup
     lime setup                         # Initial setup for development
@@ -437,6 +440,10 @@ main() {
             shift
             # Use unified upgrade script
             exec "$SCRIPT_DIR/core/upgrade-legacy-router.sh" "$@"
+            ;;
+        --install)
+            # Quick system installation via symlink
+            exec "$SCRIPT_DIR/setup.sh" install-system
             ;;
         help|-h|--help)
             usage

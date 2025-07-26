@@ -56,24 +56,28 @@ parse_source() {
     # Check build_defaults first - extract just the value, not the comment
     local use_local_repos=$(parse_config "build_defaults" "use_local_repos" "$config_file" | cut -d' ' -f1)
     
-    # If use_local_repos=true or mode=local, force local resolution
+    # Use mode-based source resolution to avoid ambiguity
+    local source_key_local="${package}-source-local"
+    local source_key_default="${package}-source-default"
+    
+    # If use_local_repos=true or mode=local, prefer local source
     if [[ "$use_local_repos" == "true" || "$mode" == "local" ]]; then
-        # Check for explicit local override in [sources]
-        local local_override=$(parse_config "sources" "$package" "$config_file")
-        if [[ "$local_override" =~ ^local: ]]; then
-            echo "$local_override"
+        # First try explicit local source configuration
+        local local_source=$(parse_config "sources" "$source_key_local" "$config_file")
+        if [[ -n "$local_source" ]]; then
+            echo "$local_source"
             return 0
         else
-            # Default to LIME_BUILD_DIR/repos/ directory
+            # Default to LIME_BUILD_DIR/repos/ directory if no explicit local config
             echo "local:$LIME_BUILD_DIR/repos/$package"
             return 0
         fi
     fi
     
-    # Normal source resolution from [sources] section
-    local source=$(parse_config "sources" "$package" "$config_file")
-    if [[ -n "$source" ]]; then
-        echo "$source"
+    # Normal mode - use default source
+    local default_source=$(parse_config "sources" "$source_key_default" "$config_file")
+    if [[ -n "$default_source" ]]; then
+        echo "$default_source"
         return 0
     fi
     

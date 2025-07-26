@@ -105,18 +105,20 @@ generate_makefile_variables() {
     
     case "$source_type" in
         "local")
+            # Pre-evaluate git hash to avoid make shell evaluation issues
+            local git_hash=$(cd "$source_location" && git rev-parse --short HEAD 2>/dev/null || echo 'unknown')
             if [[ "$package_name" == "lime-app" ]]; then
-                # lime-app specific: use local build directory, no git protocol needed
-                echo "PKG_SOURCE=local-build"
-                echo "PKG_VERSION=dev-\$(shell cd $source_location && git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
-                # Will use custom Build/Compile section instead of extracting tarball
+                # lime-app specific: skip source download, copy pre-built files in Build/Prepare
+                echo "PKG_VERSION=dev-${git_hash}"
+                # IMPORTANT: Do NOT set PKG_BUILD_DIR to source location - it corrupts our working directory
+                # No PKG_SOURCE, PKG_SOURCE_URL, or PKG_HASH for local builds
             else
                 # Other packages: use git protocol for local development
                 echo "PKG_SOURCE_PROTO=git"
                 echo "PKG_SOURCE_URL=file://$source_location"
                 echo "PKG_SOURCE_VERSION=$version"
                 echo "PKG_SOURCE=\$(PKG_NAME)-\$(PKG_VERSION).tar.gz"
-                echo "PKG_VERSION=dev-\$(shell cd $source_location && git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
+                echo "PKG_VERSION=dev-${git_hash}"
             fi
             ;;
         "git")
@@ -159,11 +161,15 @@ patch_package_makefile() {
     
     print_info "Patching $package_name Makefile for $mode mode"
     
-    # Create backup of original Makefile
+    # Create backup of original Makefile and restore it for clean patching
     local backup_path="${makefile_path}.lime-dev-backup"
     if [[ ! -f "$backup_path" ]]; then
         cp "$makefile_path" "$backup_path"
         print_info "Created backup: $backup_path"
+    else
+        # Restore from backup to ensure clean patching (idempotent)
+        cp "$backup_path" "$makefile_path"
+        print_info "Restored from backup for clean patching: $backup_path"
     fi
     
     # Parse patch configuration: patch_type:source_var:url_var:version_var
@@ -194,27 +200,39 @@ patch_package_makefile() {
             
             # lime-app specific patching
             if [[ "$package_name" == "lime-app" ]]; then
-                # For lime-app, we need to replace both variables and Build/Compile section
+                # For lime-app, we need to replace both variables and Build sections
                 local source_location=$(echo "$source_spec" | cut -d':' -f2)
                 
-                # Add custom Build/Compile section for lime-app
+                # For lime-app, add variables before include, Build/Prepare after include
+                # Pre-evaluate git hash to avoid make shell evaluation issues
+                local git_hash=$(cd "$source_location" && git rev-parse --short HEAD 2>/dev/null || echo 'unknown')
+                {
+                    echo "# Development mode source injection - added by lime-dev"
+                    echo "PKG_VERSION:=dev-${git_hash}"
+                    echo ""
+                } > "$temp_vars.additions"
+                
                 {
                     echo ""
-                    echo "# lime-app local development Build/Compile override"
-                    echo "define Build/Compile"
-                    echo "	# Copy pre-built files from local lime-app build directory"
-                    echo "	\$(INSTALL_DIR) \$(PKG_BUILD_DIR)/build"
-                    echo "	\$(CP) $source_location/build/* \$(PKG_BUILD_DIR)/build/"
+                    echo "# lime-app local development Build/Prepare override"
+                    echo "define Build/Prepare"
+                    echo "	\$(INSTALL_DIR) \$(PKG_BUILD_DIR)"
+                    echo "	\$(CP) $source_location/build \$(PKG_BUILD_DIR)/"
                     echo "endef"
-                } >> "$temp_vars.additions"
+                    echo ""
+                } > "$temp_vars.build_prepare"
                 
-                # Remove existing variables and Build/Compile, add new ones after PKG_NAME
+                # Remove existing variables and Build sections, add vars after PKG_NAME, Build/Prepare after package.mk include
                 awk '
                     /^PKG_NAME:=/ { print; getline; while (getline < "'$temp_vars.additions'") print; next }
-                    /^PKG_VERSION:=|^PKG_SOURCE:=|^PKG_SOURCE_URL:=|^PKG_SOURCE_PROTO:=|^PKG_SOURCE_VERSION:=/ { next }
-                    /^define Build\/Compile/,/^endef/ { next }
+                    /^PKG_VERSION:=|^PKG_SOURCE:=|^PKG_SOURCE_URL:=|^PKG_SOURCE_PROTO:=|^PKG_SOURCE_VERSION:=|^PKG_HASH:=/ { next }
+                    /^define Build\/Prepare/,/^endef/ { next }
+                    /^include.*package\.mk/ { print; while (getline < "'$temp_vars.build_prepare'") print; next }
+                    /\$\(BUILD_DIR\)\/build/ { gsub(/\$\(BUILD_DIR\)/, "$(PKG_BUILD_DIR)"); print; next }
                     { print }
                 ' "$makefile_path" > "$temp_makefile"
+                
+                rm -f "$temp_vars.build_prepare"
             else
                 # Standard patching for other packages
                 awk '
@@ -248,6 +266,7 @@ patch_package_makefile() {
     
     rm -f "$temp_vars"
     print_info "Successfully patched $makefile_path"
+    return 0
 }
 
 # Find package Makefile in feeds
@@ -367,9 +386,9 @@ apply_package_injection() {
         # Apply the patch
         if patch_package_makefile "$package_name" "$makefile_path" "$source_spec" "$patch_config" "$mode"; then
             print_info "Successfully patched $makefile_path"
-            ((patched_count++))
+            patched_count=$((patched_count + 1))
         else
-            ((failed_count++))
+            failed_count=$((failed_count + 1))
         fi
     done
     

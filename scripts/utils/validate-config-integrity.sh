@@ -59,8 +59,8 @@ validate_key_naming() {
     print_info "Validating key naming conventions..."
     
     # Check for old ambiguous key patterns that could cause conflicts
+    # Note: Package names in [makefile_patches] are allowed (e.g., lime-app)
     local old_patterns=(
-        "^lime-app=" 
         "^lime-packages="
         "^librerouteros="
         "^kconfig-utils="
@@ -83,6 +83,15 @@ validate_key_naming() {
         "^verify_feed_makefile_patches="
         "^check_package_source_resolution="
     )
+    
+    # Special handling for lime-app: check if it's in makefile_patches section (allowed) or elsewhere (not allowed)
+    if grep -q "^lime-app=" "$CONFIG_FILE"; then
+        local lime_app_sections=$(grep -B 10 "^lime-app=" "$CONFIG_FILE" | grep "^\[" | tail -1 | tr -d '[]')
+        if [[ "$lime_app_sections" != "makefile_patches" ]]; then
+            ambiguous_keys+=("lime-app (not in makefile_patches section)")
+            corruption_found=true
+        fi
+    fi
     
     for pattern in "${old_patterns[@]}"; do
         if grep -q "$pattern" "$CONFIG_FILE"; then
@@ -115,17 +124,23 @@ validate_required_keys() {
         fi
     done
     
-    # Source keys (should end with -source)
-    local required_source_keys=("lime-app-source" "lime-packages-source")
-    for key in "${required_source_keys[@]}"; do
-        if ! grep -q "^$key=" "$CONFIG_FILE"; then
-            missing_keys+=("$key in [sources]")
+    # Source keys (should have both -source-default and -source-local variants)
+    local required_source_packages=("lime-app" "lime-packages")
+    for package in "${required_source_packages[@]}"; do
+        local default_key="${package}-source-default"
+        local local_key="${package}-source-local"
+        
+        if ! grep -q "^$default_key=" "$CONFIG_FILE"; then
+            missing_keys+=("$default_key in [sources]")
+        fi
+        if ! grep -q "^$local_key=" "$CONFIG_FILE"; then
+            missing_keys+=("$local_key in [sources]")
         fi
     done
     
     # Other required keys with specific naming
     local other_keys=(
-        "lime-app-patch:makefile_patches"
+        "lime-app:makefile_patches"
         "default_target_hardware:build_targets"
         "development_target_hardware:build_targets"
         "openwrt_base_version:firmware_versions"
