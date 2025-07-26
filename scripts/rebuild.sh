@@ -30,24 +30,26 @@ LibreMesh Incremental Rebuild - Development Speed Optimization
 Usage: $0 <rebuild_type> [options]
 
 Rebuild Types:
-    lime-app       Ultra-fast: Only rebuild lime-app (< 30 seconds)
-    incremental    Smart: Rebuild lime-packages only (< 2 minutes)
+    lime-app       Ultra-fast: Only rebuild lime-app (3-8 minutes)
+    incremental    Smart: Rebuild lime-packages only (5-10 minutes)
     selective      Custom: Rebuild specific packages
     
 Options:
     --local        Force local sources (automatically applied)
+    --multi        Use multi-threaded firmware generation (faster but risky)
     --package PKG  Specific package to rebuild (use with selective)
     --help         Show this help
 
 Examples:
-    $0 lime-app                    # Fastest: Just lime-app
+    $0 lime-app                    # Fastest: Just lime-app (optimized target build)
+    $0 lime-app --multi           # Fastest + multi-threaded firmware generation
     $0 incremental                 # All lime-packages
     $0 selective --package shared-state  # Specific package only
 
 Speed Comparison:
     Full build:        15-45 minutes (complete rebuild)
-    lime rebuild:      1-3 minutes   (packages only)
-    lime rebuild-fast: 10-30 seconds (lime-app only)
+    lime rebuild:      5-10 minutes  (packages + optimized target build)
+    lime rebuild-fast: 3-8 minutes   (lime-app + optimized target build)
 
 EOF
 }
@@ -107,6 +109,7 @@ check_initial_build_required() {
 
 # Rebuild lime-app only (ultra-fast)
 rebuild_lime_app_only() {
+    local multi_threaded="${1:-false}"
     print_info "🚀 Ultra-fast lime-app rebuild"
     
     check_initial_build_required
@@ -122,18 +125,62 @@ rebuild_lime_app_only() {
     print_info "Rebuilding lime-app..."
     make package/feeds/libremesh/lime-app/compile
     
-    print_info "Installing lime-app..."
-    make package/feeds/libremesh/lime-app/install
+    print_info "Verifying lime-app package was created..."
+    local package_pattern="$BUILD_DIR/bin/packages/mips_24kc/libremesh/lime-app_*.ipk"
+    if ls $package_pattern 1> /dev/null 2>&1; then
+        print_info "✅ lime-app package created successfully"
+        local package_file=$(ls -t $package_pattern | head -1)
+        print_info "📦 Package: $(basename "$package_file")"
+    else
+        print_error "❌ lime-app package was not created"
+        return 1
+    fi
     
-    print_info "Updating rootfs..."
-    make target/linux/install
+    # Generate firmware image
+    print_info "🔧 Generating firmware image with updated lime-app..."
     
-    print_success "lime-app rebuild complete!"
-    print_info "New firmware available in: $BUILD_DIR/bin/"
+    if [[ "$multi_threaded" == "true" ]]; then
+        print_info "⚡ Using multi-threaded full build (fastest but risky)"
+        local make_command="make -j$(nproc)"
+        local time_estimate="2-5 minutes"
+    else
+        print_info "🚀 Using optimized target build (fast and reliable)"
+        local make_command="make target/linux/install"
+        local time_estimate="3-8 minutes"
+    fi
+    
+    print_info "⏱️  Estimated time: $time_estimate"
+    
+    if $make_command; then
+        print_success "✅ Firmware image generation complete!"
+        print_info "🎯 Updated firmware available in: $BUILD_DIR/bin/targets/"
+        
+        local latest_firmware=$(find "$BUILD_DIR/bin/targets" -name "*.bin" -newer "$package_file" | head -1)
+        if [[ -n "$latest_firmware" ]]; then
+            print_info "📁 Latest image: $(basename "$latest_firmware")"
+        else
+            # Find any firmware image
+            local any_firmware=$(find "$BUILD_DIR/bin/targets" -name "*.bin" | head -1)
+            if [[ -n "$any_firmware" ]]; then
+                print_info "📁 Firmware image: $(basename "$any_firmware")"
+            fi
+        fi
+        
+        print_info ""
+        print_info "⚡ Alternative: Install package directly on device for faster iteration:"
+        print_info "   scp $package_file root@10.13.0.1:/tmp/"
+        print_info "   ssh root@10.13.0.1 'opkg install /tmp/$(basename "$package_file")'"
+    else
+        print_error "❌ Firmware image generation failed"
+        print_info "📦 Package available for manual installation: $(basename "$package_file")"
+        print_info "🔧 Try manual firmware generation: cd $BUILD_DIR && make -j1"
+        return 1
+    fi
 }
 
 # Rebuild all lime-packages (incremental)
 rebuild_lime_packages() {
+    local multi_threaded="${1:-false}"
     print_info "📦 Smart incremental rebuild (lime-packages)"
     
     check_initial_build_required
@@ -169,20 +216,52 @@ rebuild_lime_packages() {
         if [[ -d "package/feeds/libremesh/$pkg" ]]; then
             print_info "  Building $pkg..."
             make "package/feeds/libremesh/$pkg/compile"
-            make "package/feeds/libremesh/$pkg/install"
+            # Skip install step - packages are created during compile
+            if ls "$BUILD_DIR/bin/packages/mips_24kc/libremesh/$pkg"*.ipk 1> /dev/null 2>&1; then
+                print_info "  ✅ $pkg package created"
+            else
+                print_info "  ⚠️  $pkg package not found (may be expected)"
+            fi
         fi
     done
     
-    print_info "Updating rootfs..."
-    make target/linux/install
+    print_info "✅ Package rebuild complete!"
+    print_info "📁 Packages available in: $BUILD_DIR/bin/packages/mips_24kc/libremesh/"
     
-    print_success "Incremental rebuild complete!"
-    print_info "New firmware available in: $BUILD_DIR/bin/"
+    # Generate firmware image  
+    print_info "🔧 Generating firmware image with updated packages..."
+    
+    if [[ "$multi_threaded" == "true" ]]; then
+        print_info "⚡ Using multi-threaded full build (fastest but risky)"
+        local make_command="make -j$(nproc)"
+        local time_estimate="3-8 minutes"
+    else
+        print_info "🚀 Using optimized target build (fast and reliable)"
+        local make_command="make target/linux/install"
+        local time_estimate="5-10 minutes" 
+    fi
+    
+    print_info "⏱️  Estimated time: $time_estimate"
+    
+    if $make_command; then
+        print_success "✅ Incremental rebuild complete!"
+        print_info "🎯 Updated firmware available in: $BUILD_DIR/bin/targets/"
+        local latest_firmware=$(find "$BUILD_DIR/bin/targets" -name "*.bin" | head -1)
+        if [[ -n "$latest_firmware" ]]; then
+            print_info "📁 Firmware image: $(basename "$latest_firmware")"
+        fi
+    else
+        print_error "❌ Firmware image generation failed"
+        print_info "📦 Packages available but image not updated"
+        print_info "🔧 Try manual firmware generation: cd $BUILD_DIR && make -j1"
+        return 1
+    fi
 }
 
 # Rebuild specific package
 rebuild_specific_package() {
     local package="$1"
+    local multi_threaded="${2:-false}"
     
     print_info "🎯 Rebuilding specific package: $package"
     
@@ -213,13 +292,35 @@ rebuild_specific_package() {
     
     print_info "Rebuilding $package..."
     make "$package_path/compile"
-    make "$package_path/install"
     
-    print_info "Updating rootfs..."
-    make target/linux/install
-    
-    print_success "Package $package rebuild complete!"
-    print_info "New firmware available in: $BUILD_DIR/bin/"
+    # Verify package was created
+    if ls "$BUILD_DIR/bin/packages/mips_24kc"/*/"$package"*.ipk 1> /dev/null 2>&1; then
+        print_info "✅ $package package created successfully"
+        local package_file=$(ls -t "$BUILD_DIR/bin/packages/mips_24kc"/*/"$package"*.ipk | head -1)
+        
+        # Generate firmware image
+        print_info "🔧 Generating firmware image with updated $package..."
+        
+        if [[ "$multi_threaded" == "true" ]]; then
+            print_info "⚡ Using multi-threaded full build (fastest but risky)"
+            local make_command="make -j$(nproc)"
+        else
+            print_info "🚀 Using optimized target build (fast and reliable)"
+            local make_command="make target/linux/install"
+        fi
+        
+        if $make_command; then
+            print_success "✅ Package $package rebuild complete!"
+            print_info "🎯 Updated firmware available in: $BUILD_DIR/bin/targets/"
+        else
+            print_error "❌ Firmware image generation failed"
+            print_info "📦 Package available: $(basename "$package_file")"
+            return 1
+        fi
+    else
+        print_error "❌ $package package was not created"
+        return 1
+    fi
 }
 
 # Show build time estimates
@@ -228,12 +329,13 @@ show_time_estimates() {
 
 ⏱️  Build Time Estimates:
    Full build:        15-45 minutes (everything from scratch)
-   lime rebuild:      1-3 minutes   (all lime-packages)  
-   lime rebuild-fast: 10-30 seconds (lime-app only)
+   lime rebuild:      5-10 minutes  (all lime-packages + optimized target build)  
+   lime rebuild-fast: 3-8 minutes   (lime-app + optimized target build)
 
 💡 Development Tips:
    - Use 'lime rebuild-fast' for lime-app UI changes
    - Use 'lime rebuild' for lime-packages changes
+   - Add '--multi' for faster but riskier multi-threaded builds
    - Keep downloads cache with: 'lime clean build' (not 'lime clean all')
    - Use QEMU for testing: 'lime qemu start'
 
@@ -244,6 +346,7 @@ EOF
 main() {
     local rebuild_type="${1:-help}"
     local package=""
+    local multi_threaded="false"
     
     # Parse arguments
     shift || true
@@ -255,6 +358,10 @@ main() {
                 ;;
             --local)
                 # Local mode is automatically applied
+                shift
+                ;;
+            --multi)
+                multi_threaded="true"
                 shift
                 ;;
             --help|-h|help)
@@ -271,10 +378,10 @@ main() {
     
     case "$rebuild_type" in
         "lime-app")
-            rebuild_lime_app_only
+            rebuild_lime_app_only "$multi_threaded"
             ;;
         "incremental") 
-            rebuild_lime_packages
+            rebuild_lime_packages "$multi_threaded"
             ;;
         "selective")
             if [[ -z "$package" ]]; then
@@ -282,7 +389,7 @@ main() {
                 usage
                 exit 1
             fi
-            rebuild_specific_package "$package"
+            rebuild_specific_package "$package" "$multi_threaded"
             ;;
         "help"|"--help"|"-h")
             usage
