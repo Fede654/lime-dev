@@ -173,6 +173,10 @@ site/
 qemu-*.pid
 qemu-*.sock
 qemu-*.monitor
+tools/qemu/diagnose
+tools/qemu/driver-cache.json
+tools/qemu/drivers/
+tools/qemu/*.sh.broken
 
 # Temporary Files
 # ---------------
@@ -189,11 +193,21 @@ temp/
 *.old
 backup/
 backups/
+backup-*/
 
 # Generated Files
 # ---------------
 generated/
 .generated/
+build-with-qemu-drivers.sh
+
+# Documentation and Implementation Notes
+# --------------------------------------
+*-IMPLEMENTATION.md
+*-DIAGNOSTICS.md
+*-REFERENCE.md
+docs/*-DIAGNOSTICS.md
+docs/*-REFERENCE.md
 
 # Dependencies (except lock files)
 # --------------------------------
