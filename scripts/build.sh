@@ -40,14 +40,17 @@ Options:
     --shell            Open interactive shell (docker method only)
     --clean [TYPE]     Clean build environment
                        Types: all (default), build, downloads, outputs
-    --mode [MODE]      Set build mode (development, release)
-                       Controls source repository selection
+    --local            Use local repository sources for development
+    --skip-validation  Skip mandatory build mode validation (not recommended)
     -h, --help         Show this help
 
 Examples:
-    $0                              # Native build for librerouter-v1
-    $0 native librerouter-v1        # Explicit native build
-    $0 docker librerouter-v1        # Docker build
+    $0                              # Native build using configured sources
+    $0 native librerouter-v1        # Explicit native build with configured sources
+    $0 --local librerouter-v1       # Native build with local development sources
+    $0 docker librerouter-v1        # Docker build with configured sources
+    $0 docker --local x86_64        # Docker build with local sources
+    $0 --skip-validation x86_64     # Build without validation (not recommended)
     $0 native --download-only       # Download dependencies only
     $0 docker --shell               # Open Docker shell
     $0 --clean                      # Clean all build artifacts
@@ -167,6 +170,8 @@ main() {
     local shell_mode="false"
     local clean_mode="false"
     local clean_type="all"
+    local skip_validation="false"
+    local local_mode="false"
     
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -199,13 +204,22 @@ main() {
                 fi
                 ;;
             --mode)
-                if [[ $# -gt 1 && "$2" =~ ^(development|release)$ ]]; then
-                    export LIME_BUILD_MODE="$2"
+                print_info "WARNING: --mode flag is deprecated and ignored"
+                print_info "Use --local for local development, or default for configured sources"
+                if [[ $# -gt 1 ]]; then
                     shift 2
                 else
-                    print_error "Invalid mode. Use 'development' or 'release'"
-                    exit 1
+                    shift 1
                 fi
+                ;;
+            --local)
+                local_mode="true"
+                export LIME_LOCAL_MODE="true"
+                shift
+                ;;
+            --skip-validation)
+                skip_validation="true"
+                shift
                 ;;
             -h|--help)
                 usage
@@ -227,8 +241,10 @@ main() {
     print_info "LibreMesh Build Management"
     print_info "Method: $method"
     print_info "Target: $target"
-    if [[ -n "$LIME_BUILD_MODE" ]]; then
-        print_info "Build Mode: $LIME_BUILD_MODE"
+    if [[ "$local_mode" == "true" ]]; then
+        print_info "Source Mode: LOCAL (forcing local repository sources)"
+    else
+        print_info "Source Mode: CONFIGURED (using sources from versions.conf [sources] section)"
     fi
     print_info ""
     
@@ -237,15 +253,32 @@ main() {
         exit 0
     fi
     
-    # Validate build mode configuration before expensive build operations
-    if [[ -n "$LIME_BUILD_MODE" ]]; then
-        print_info "Validating build mode configuration..."
-        if ! "$SCRIPT_DIR/utils/validate-build-mode.sh" "$LIME_BUILD_MODE" "$LIME_BUILD_DIR/build"; then
-            print_error "Build mode validation failed. This prevents expensive failed builds."
+    # MANDATORY build source validation before expensive build operations
+    if [[ "$skip_validation" == "false" ]]; then
+        # Simple validation: local vs configured
+        if [[ "$local_mode" == "true" ]]; then
+            print_info "Running mandatory source validation (local mode)..."
+            print_info "Validating local repository sources are available"
+            validation_mode="local"
+        else
+            print_info "Running mandatory source validation (configured mode)..."
+            print_info "Validating configured sources from [sources] section are accessible"
+            validation_mode="default"
+        fi
+        
+        print_info "Use --skip-validation to bypass this check (not recommended)"
+        
+        if ! "$SCRIPT_DIR/utils/validate-build-mode.sh" "$validation_mode" "$LIME_BUILD_DIR/build"; then
+            print_error "❌ Source validation failed. This prevents expensive failed builds."
             print_error "Fix the configuration issues above before proceeding."
+            print_error "Use --skip-validation to bypass this check (not recommended)."
             exit 1
         fi
-        print_info "✅ Build mode validation passed"
+        print_info "✅ Source validation passed"
+        print_info ""
+    else
+        print_info "⚠️  Skipping build mode validation (--skip-validation used)"
+        print_info "⚠️  This may result in build failures or unexpected behavior"
         print_info ""
     fi
     

@@ -10,6 +10,7 @@ WORK_DIR="$(pwd)"
 LIME_BUILD_DIR="$WORK_DIR"
 CONFIG_FILE="$LIME_BUILD_DIR/configs/versions.conf"
 RELEASE_MODE="${LIME_RELEASE_MODE:-false}"
+BUILD_REMOTE_ONLY="${LIME_BUILD_REMOTE_ONLY:-false}"
 
 print_info() {
     echo "[INFO] $1"
@@ -132,7 +133,7 @@ safe_clone_repository() {
     fi
     
     IFS='|' read -r repo_url branch remote_name <<< "$config"
-    local dir_name="${repo_name/_/-}"
+    local dir_name="$repo_name"
     
     print_info "Processing $repo_name -> $dir_name"
     print_info "  URL: $repo_url"
@@ -217,12 +218,18 @@ safe_clone_repository() {
 
 # Safe repository setup
 safe_clone_repositories() {
-    print_info "Setting up repositories in repos/ directory..."
+    if [[ "$BUILD_REMOTE_ONLY" == "true" ]]; then
+        print_info "Build-remote-only mode: Skipping local repository setup"
+        print_info "This setup is optimized for building with official remote sources"
+        return 0
+    fi
+    
+    print_info "Setting up repositories for local development..."
     
     mkdir -p repos
     cd repos
     
-    local repos=(lime_app lime_packages librerouteros kconfig_utils openwrt)
+    local repos=(lime-app lime-packages librerouteros kconfig-utils openwrt)
     
     for repo in "${repos[@]}"; do
         safe_clone_repository "$repo"
@@ -323,6 +330,7 @@ safe_install_system_wide() {
 show_environment_info() {
     print_info "Environment Information:"
     echo "  Release mode: $RELEASE_MODE"
+    echo "  Build remote only: $BUILD_REMOTE_ONLY"
     echo "  Configuration: $CONFIG_FILE"
     echo "  Working directory: $LIME_BUILD_DIR"
     
@@ -330,10 +338,22 @@ show_environment_info() {
         print_warning "Running in RELEASE MODE - using release repository overrides"
     fi
     
+    if [[ "$BUILD_REMOTE_ONLY" == "true" ]]; then
+        print_warning "Running in BUILD-REMOTE-ONLY MODE - optimized for official builds"
+    fi
+    
     print_info ""
     print_info "This script will:"
     echo "  - Check system dependencies (install with permission)"
-    echo "  - Clone/update repositories (with confirmation)"
+    
+    if [[ "$BUILD_REMOTE_ONLY" == "true" ]]; then
+        echo "  - Skip local repository cloning (build-remote-only mode)"
+        echo "  - Configure system for official remote builds"
+    else
+        echo "  - Clone/update repositories for local development (with confirmation)"
+        echo "  - Set up local development environment"
+    fi
+    
     echo "  - Set up system configuration (with permission)"
     echo "  - Install lime command system-wide via symlink (with permission)"
     echo "  - Preserve existing work and local changes"
@@ -356,6 +376,14 @@ main() {
     safe_clone_repositories
     safe_setup_system
     safe_install_system_wide
+    
+    # Apply lime-dev patches to librerouteros build script if repos were cloned
+    if [[ "$BUILD_REMOTE_ONLY" != "true" && -f "$LIME_BUILD_DIR/repos/librerouteros/librerouteros_build.sh" ]]; then
+        print_info "Applying lime-dev integration patches..."
+        if [[ -f "$LIME_BUILD_DIR/scripts/utils/patch-librerouteros-build.sh" ]]; then
+            "$LIME_BUILD_DIR/scripts/utils/patch-librerouteros-build.sh" apply
+        fi
+    fi
     
     print_success "Safe setup completed!"
     echo ""

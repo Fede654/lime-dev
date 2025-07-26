@@ -125,6 +125,14 @@ update_all_repos() {
     fi
     
     print_success "All repositories updated!"
+    
+    # Apply lime-dev patches to librerouteros build script
+    print_info "Applying lime-dev integration patches..."
+    if [[ -f "$WORK_DIR/scripts/utils/patch-librerouteros-build.sh" ]]; then
+        "$WORK_DIR/scripts/utils/patch-librerouteros-build.sh" apply
+    else
+        print_error "Patch script not found, manual intervention may be required"
+    fi
 }
 
 # Show repository status

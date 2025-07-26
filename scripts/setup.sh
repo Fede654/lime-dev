@@ -29,7 +29,7 @@ Usage: $0 [COMMAND] [OPTIONS]
 
 Commands:
     check           Check current setup status with dependency graph
-    install         Full setup with user confirmation (safe)
+    install         Full setup with user confirmation (safe, defaults to development mode)
     install-auto    Automated setup (use with caution)
     install-system  Install lime command system-wide via symlink
     update          Update repositories with dependency visualization
@@ -38,15 +38,17 @@ Commands:
     env             Show environment information
     
 Options:
-    --release       Use release mode (javierbrk repositories)
+    --build-remote-only  Skip local repository cloning, optimize for remote builds
     --export-dot    Export dependency graph as DOT file (use with graph command)
+    --skip-validation  Skip post-setup configuration validation (not recommended)
     -h, --help      Show this help
 
 Examples:
     $0 check                    # Check status with dependency graph
-    $0 install                  # Safe interactive setup with graph
-    $0 install --release        # Setup for release testing (javierbrk repos)
-    $0 update                   # Update repositories with visualization
+    $0 install                  # Setup for local development (clones repositories)
+    $0 install --build-remote-only # Setup optimized for CI/CD builds (no local repos)
+    $0 install --skip-validation # Setup without post-setup validation (not recommended)
+    $0 update                   # Update repositories with validation
     $0 graph                    # Detailed dependency analysis
     $0 graph --export-dot       # Export professional graph file
     $0 deps                     # Check system dependencies
@@ -70,7 +72,9 @@ check_directory() {
 main() {
     local command="${1:-help}"
     local release_mode="false"
+    local build_remote_only="false"
     local export_dot="false"
+    local skip_validation="false"
     
     # Parse options
     while [[ $# -gt 0 ]]; do
@@ -112,8 +116,17 @@ main() {
                 export LIME_RELEASE_MODE="true"
                 shift
                 ;;
+            --build-remote-only)
+                build_remote_only="true"
+                export LIME_BUILD_REMOTE_ONLY="true"
+                shift
+                ;;
             --export-dot)
                 export_dot="true"
+                shift
+                ;;
+            --skip-validation)
+                skip_validation="true"
                 shift
                 ;;
             -h|--help|help)
@@ -134,6 +147,9 @@ main() {
     if [[ "$release_mode" == "true" ]]; then
         print_info "Release mode: ENABLED (using javierbrk repositories)"
     fi
+    if [[ "$build_remote_only" == "true" ]]; then
+        print_info "Build-remote-only mode: ENABLED (optimized for official builds)"
+    fi
     print_info ""
     
     case "$command" in
@@ -146,11 +162,63 @@ main() {
             "$SCRIPT_DIR/utils/dependency-graph.sh" ascii
             ;;
         install)
-            exec "$SCRIPT_DIR/core/setup-lime-dev-safe.sh"
+            # Run setup and then validate configuration
+            "$SCRIPT_DIR/core/setup-lime-dev-safe.sh"
+            
+            # Post-setup validation
+            if [[ "$skip_validation" == "false" ]]; then
+                local setup_mode="development"
+                if [[ "$release_mode" == "true" ]]; then
+                    setup_mode="release"
+                fi
+                
+                print_info ""
+                print_info "🔍 Running post-setup configuration validation..."
+                print_info "   Validating setup matches intended mode: $setup_mode"
+                
+                if [[ "$build_remote_only" == "true" ]]; then
+                    print_info "   Build-remote-only mode: Validating remote source configuration"
+                else
+                    print_info "   Local development mode: Validating repository setup"
+                fi
+                
+                if "$SCRIPT_DIR/utils/validate-build-mode.sh" "$setup_mode" "$LIME_BUILD_DIR/build"; then
+                    if [[ "$build_remote_only" == "true" ]]; then
+                        print_success "✅ Remote build setup validation passed - ready for official builds"
+                    else
+                        print_success "✅ Development setup validation passed - repositories configured correctly"
+                    fi
+                else
+                    print_error "❌ Setup validation failed - configuration issues detected"
+                    print_error "   Run: lime setup install --skip-validation (not recommended)"
+                    print_error "   Or fix the configuration issues shown above"
+                    exit 1
+                fi
+            else
+                print_info "⚠️  Skipping post-setup validation (--skip-validation used)"
+            fi
             ;;
         install-auto)
             print_info "Running automated setup (potentially disruptive)"
-            exec "$SCRIPT_DIR/legacy/setup-lime-dev.sh"
+            "$SCRIPT_DIR/legacy/setup-lime-dev.sh"
+            
+            # Post-setup validation for automated setup too
+            if [[ "$skip_validation" == "false" ]]; then
+                local setup_mode="development"
+                if [[ "$release_mode" == "true" ]]; then
+                    setup_mode="release"
+                fi
+                
+                print_info ""
+                print_info "🔍 Running post-setup configuration validation..."
+                
+                if "$SCRIPT_DIR/utils/validate-build-mode.sh" "$setup_mode" "$LIME_BUILD_DIR/build"; then
+                    print_success "✅ Automated setup validation passed"
+                else
+                    print_error "❌ Automated setup validation failed"
+                    exit 1
+                fi
+            fi
             ;;
         install-system)
             print_info "Installing lime command system-wide..."
@@ -188,6 +256,29 @@ main() {
             echo ""
             print_info "Repository Status After Update:"
             "$SCRIPT_DIR/utils/dependency-graph.sh" ascii
+            
+            # Post-update validation
+            if [[ "$skip_validation" == "false" ]]; then
+                local update_mode="development"
+                if [[ "$release_mode" == "true" ]]; then
+                    update_mode="release"
+                fi
+                
+                print_info ""
+                print_info "🔍 Running post-update configuration validation..."
+                print_info "   Validating updated repositories match expected configuration"
+                
+                if "$SCRIPT_DIR/utils/validate-build-mode.sh" "$update_mode" "$LIME_BUILD_DIR/build"; then
+                    print_success "✅ Update validation passed - repositories properly synchronized"
+                else
+                    print_error "❌ Update validation failed - repository state inconsistent"
+                    print_error "   Some repositories may not match expected configuration"
+                    print_error "   Run: lime setup update --skip-validation (not recommended)"
+                    exit 1
+                fi
+            else
+                print_info "⚠️  Skipping post-update validation (--skip-validation used)"
+            fi
             ;;
         deps)
             "$SCRIPT_DIR/core/check-setup.sh" | grep -A 20 "System Dependencies"

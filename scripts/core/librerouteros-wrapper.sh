@@ -21,9 +21,23 @@ cd "$LIBREROUTEROS_DIR"
 
 # Load unified source of truth from versions.conf
 if [[ -f "$LIME_BUILD_DIR/scripts/utils/versions-parser.sh" ]]; then
-    source <(QUIET=true "$LIME_BUILD_DIR/scripts/utils/versions-parser.sh" environment "${LIME_BUILD_MODE:-development}")
-    echo "[LIME-DEV] Using unified source of truth (mode: ${LIME_BUILD_MODE:-development})"
+    # Determine source mode from environment
+    source_mode="default"
+    if [[ -n "$LIME_LOCAL_MODE" && "$LIME_LOCAL_MODE" == "true" ]]; then
+        source_mode="local"
+    fi
+    
+    source <(QUIET=true "$LIME_BUILD_DIR/scripts/utils/versions-parser.sh" environment "$source_mode")
+    echo "[LIME-DEV] Using unified source of truth (mode: $source_mode)"
     echo "[LIME-DEV] LibreMesh feed: $LIBREMESH_FEED"
+    
+    # Apply package-level source injection
+    if [[ -x "$LIME_BUILD_DIR/scripts/utils/package-source-injector.sh" ]]; then
+        echo "[LIME-DEV] Applying package-level source injection for $source_mode mode"
+        if ! "$LIME_BUILD_DIR/scripts/utils/package-source-injector.sh" apply "$source_mode" "$LIME_BUILD_DIR/build"; then
+            echo "[LIME-DEV] WARNING: Package source injection failed, continuing with defaults"
+        fi
+    fi
 else
     # Fallback to direct environment setup
     export OPENWRT_SRC_DIR="$LIBREROUTEROS_DIR/openwrt/"
