@@ -256,6 +256,92 @@ safe_clone_repositories() {
         safe_clone_repository "$repo"
     done
     
+    # Setup npm dependencies for lime-app
+    setup_lime_app_dependencies
+    
+    cd "$LIME_BUILD_DIR"
+}
+
+# Setup lime-app npm dependencies and configuration
+setup_lime_app_dependencies() {
+    local lime_app_dir="$LIME_BUILD_DIR/repos/lime-app"
+    
+    if [[ ! -d "$lime_app_dir" ]]; then
+        print_warning "lime-app directory not found, skipping npm setup"
+        return 0
+    fi
+    
+    if ! command -v npm >/dev/null 2>&1; then
+        print_warning "npm not found, skipping lime-app dependency installation"
+        return 0
+    fi
+    
+    print_info "Setting up lime-app npm dependencies..."
+    cd "$lime_app_dir"
+    
+    # Check if package.json exists
+    if [[ ! -f "package.json" ]]; then
+        print_warning "package.json not found in lime-app, skipping npm setup"
+        return 0
+    fi
+    
+    # Setup npm configuration for development
+    print_info "Configuring npm for development..."
+    
+    # Check current npm configuration
+    local npm_prefix=$(npm config get prefix 2>/dev/null || echo "")
+    if [[ "$npm_prefix" == "/usr" || "$npm_prefix" == "/usr/local" ]]; then
+        print_warning "npm prefix is set to system directory: $npm_prefix"
+        if ask_user "Configure npm to use user directory (~/.npm-global)?"; then
+            mkdir -p ~/.npm-global
+            npm config set prefix ~/.npm-global
+            print_info "Added npm global directory to PATH in ~/.bashrc"
+            if ! grep -q "/.npm-global/bin" ~/.bashrc; then
+                echo 'export PATH="$PATH:$HOME/.npm-global/bin"' >> ~/.bashrc
+                print_info "Please run 'source ~/.bashrc' or start a new terminal session"
+            fi
+        fi
+    fi
+    
+    # Install dependencies if node_modules doesn't exist
+    if [[ ! -d "node_modules" ]]; then
+        print_info "Installing lime-app npm dependencies..."
+        if ask_user "Run 'npm install' to install lime-app dependencies?"; then
+            if npm install; then
+                print_success "lime-app dependencies installed successfully"
+            else
+                print_error "Failed to install lime-app dependencies"
+                print_info "You may need to run 'npm install' manually in repos/lime-app/"
+            fi
+        else
+            print_warning "Skipping npm install - you'll need to run 'npm install' manually in repos/lime-app/"
+        fi
+    else
+        print_info "lime-app dependencies already installed"
+        
+        # Check if dependencies are up to date
+        if ask_user "Update lime-app dependencies to latest versions?"; then
+            if npm update; then
+                print_success "lime-app dependencies updated"
+            else
+                print_warning "Failed to update dependencies, but existing ones should work"
+            fi
+        fi
+    fi
+    
+    # Test if lime-app can build
+    if [[ -f "package.json" ]] && grep -q "build:production" package.json; then
+        if ask_user "Test lime-app build to verify setup?"; then
+            print_info "Testing lime-app build..."
+            if npm run build:production; then
+                print_success "lime-app builds successfully! Development environment ready."
+            else
+                print_warning "lime-app build failed - check dependencies and configuration"
+                print_info "You can try building manually later with: cd repos/lime-app && npm run build:production"
+            fi
+        fi
+    fi
+    
     cd "$LIME_BUILD_DIR"
 }
 
