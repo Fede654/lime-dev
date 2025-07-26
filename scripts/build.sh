@@ -17,6 +17,95 @@ print_error() {
     echo "[ERROR] $1" >&2
 }
 
+print_warning() {
+    echo "[WARNING] $1" >&2
+}
+
+print_critical() {
+    echo -e "\033[1;31m[CRITICAL]\033[0m $1" >&2
+}
+
+print_success() {
+    echo -e "\033[0;32m[SUCCESS]\033[0m $1"
+}
+
+# Check for existing build and confirm destructive operations
+confirm_build_override() {
+    local target="$1"
+    local source_mode="$2"
+    
+    # Check for existing firmware files
+    local firmware_dir="$LIME_BUILD_DIR/build/bin/targets"
+    local existing_files=()
+    
+    if [[ -d "$firmware_dir" ]]; then
+        while IFS= read -r -d '' file; do
+            existing_files+=("$file")
+        done < <(find "$firmware_dir" -name "*.bin" -type f -print0 2>/dev/null)
+    fi
+    
+    # Check for significant build directory
+    local build_size=0
+    if [[ -d "$LIME_BUILD_DIR/build" ]]; then
+        build_size=$(du -sm "$LIME_BUILD_DIR/build" 2>/dev/null | cut -f1 || echo 0)
+    fi
+    
+    # Only show confirmation if there's significant existing data
+    if [[ ${#existing_files[@]} -gt 0 || $build_size -gt 100 ]]; then
+        print_critical "⚠️  DESTRUCTIVE OPERATION WARNING ⚠️"
+        echo
+        print_warning "This build will OVERWRITE existing build data:"
+        
+        if [[ $build_size -gt 0 ]]; then
+            print_warning "• Build directory: ${build_size}MB of data will be replaced"
+        fi
+        
+        if [[ ${#existing_files[@]} -gt 0 ]]; then
+            print_warning "• Existing firmware files (${#existing_files[@]} files):"
+            for file in "${existing_files[@]:0:5}"; do  # Show max 5 files
+                local size_mb=$(( $(stat -c%s "$file" 2>/dev/null || echo 0) / 1024 / 1024 ))
+                local age=$(stat -c %y "$file" 2>/dev/null | cut -d' ' -f1 || echo "unknown")
+                print_warning "  $(basename "$file") (${size_mb}MB, ${age})"
+            done
+            if [[ ${#existing_files[@]} -gt 5 ]]; then
+                print_warning "  ... and $((${#existing_files[@]} - 5)) more files"
+            fi
+        fi
+        
+        echo
+        print_info "Build details:"
+        print_info "• Target: $target"
+        print_info "• Source mode: $source_mode"
+        print_info "• Build time: ~15-45 minutes"
+        print_info "• Result: New firmware files in build/bin/targets/"
+        echo
+        
+        print_critical "🚨 ALL EXISTING BUILD DATA WILL BE LOST 🚨"
+        echo
+        
+        # Force explicit confirmation
+        local confirmation=""
+        while [[ "$confirmation" != "yes" && "$confirmation" != "no" ]]; do
+            echo -n "Type 'yes' to continue with build or 'no' to cancel: "
+            read -r confirmation
+            confirmation=$(echo "$confirmation" | tr '[:upper:]' '[:lower:]')
+        done
+        
+        if [[ "$confirmation" == "no" ]]; then
+            print_info "Build cancelled by user"
+            print_info ""
+            print_info "Alternative options:"
+            print_info "• Use 'lime clean' to selectively clean build artifacts"
+            print_info "• Backup existing firmware: cp build/bin/targets/*/*.bin ~/firmware-backup/"
+            print_info "• Use incremental rebuild: 'lime rebuild' or 'lime rebuild-fast'"
+            exit 0
+        fi
+        
+        print_success "✅ Build confirmed - proceeding with $target build"
+        echo
+    fi
+}
+
 usage() {
     cat << EOF
 LibreMesh Build Management
@@ -83,8 +172,14 @@ check_setup() {
 native_build() {
     local target="$1"
     local download_only="$2"
+    local source_mode="$3"
     
     print_info "Native LibreRouterOS build for $target"
+    
+    # Skip confirmation for download-only mode
+    if [[ "$download_only" != "true" ]]; then
+        confirm_build_override "$target" "$source_mode"
+    fi
     
     if [[ "$download_only" == "true" ]]; then
         BUILD_DOWNLOAD_ONLY=true exec "$SCRIPT_DIR/core/librerouteros-wrapper.sh" "$target"
@@ -97,8 +192,14 @@ docker_build() {
     local target="$1"
     local download_only="$2"
     local shell_mode="$3"
+    local source_mode="$4"
     
     print_info "Docker LibreRouterOS build for $target"
+    
+    # Skip confirmation for shell or download-only mode
+    if [[ "$shell_mode" != "true" && "$download_only" != "true" ]]; then
+        confirm_build_override "$target" "$source_mode"
+    fi
     
     if [[ "$shell_mode" == "true" ]]; then
         exec "$SCRIPT_DIR/core/docker-build.sh" --shell
@@ -253,8 +354,26 @@ main() {
         exit 0
     fi
     
-    # MANDATORY build source validation before expensive build operations
+    # MANDATORY configuration integrity check before expensive build operations
     if [[ "$skip_validation" == "false" ]]; then
+        print_info "Running mandatory configuration integrity check..."
+        
+        # Check config file integrity first
+        if ! "$SCRIPT_DIR/utils/validate-config-integrity.sh" validate; then
+            case $? in
+                1)
+                    print_error "❌ Configuration integrity check failed"
+                    print_error "Fix the configuration corruption above before proceeding"
+                    exit 1
+                    ;;
+                2)
+                    print_info "Auto-fix requested but not yet implemented"
+                    print_error "Please manually fix the configuration and try again"
+                    exit 1
+                    ;;
+            esac
+        fi
+        
         # Simple validation: local vs configured
         if [[ "$local_mode" == "true" ]]; then
             print_info "Running mandatory source validation (local mode)..."
@@ -274,7 +393,7 @@ main() {
             print_error "Use --skip-validation to bypass this check (not recommended)."
             exit 1
         fi
-        print_info "✅ Source validation passed"
+        print_info "✅ Configuration integrity and source validation passed"
         print_info ""
     else
         print_info "⚠️  Skipping build mode validation (--skip-validation used)"
@@ -284,12 +403,18 @@ main() {
     
     check_setup
     
+    # Determine source mode for confirmation dialog
+    local source_mode="CONFIGURED"
+    if [[ "$local_mode" == "true" ]]; then
+        source_mode="LOCAL"
+    fi
+    
     case "$method" in
         native)
-            native_build "$target" "$download_only"
+            native_build "$target" "$download_only" "$source_mode"
             ;;
         docker)
-            docker_build "$target" "$download_only" "$shell_mode"
+            docker_build "$target" "$download_only" "$shell_mode" "$source_mode"
             ;;
         *)
             print_error "Unknown build method: $method"

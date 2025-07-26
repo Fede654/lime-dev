@@ -68,6 +68,24 @@ check_directory() {
 parse_config() {
     print_info "Using configuration: $CONFIG_FILE"
     print_info "Release mode: $RELEASE_MODE"
+    
+    # Validate configuration integrity before using it
+    print_info "Validating configuration integrity..."
+    if ! "$SCRIPT_DIR/../utils/validate-config-integrity.sh" validate; then
+        case $? in
+            1)
+                print_error "❌ Configuration integrity check failed"
+                print_error "Fix the configuration corruption before proceeding with setup"
+                exit 1
+                ;;
+            2)
+                print_info "Auto-fix requested but not yet implemented"
+                print_error "Please manually fix the configuration and try again"
+                exit 1
+                ;;
+        esac
+    fi
+    print_info "✅ Configuration integrity validated"
 }
 
 # Get repository configuration
@@ -75,21 +93,24 @@ get_repo_config() {
     local repo_name="$1"
     local section="repositories"
     
+    # Use new naming convention: append -repo suffix
+    local config_key="${repo_name}-repo"
+    
     # Check if we should use release overrides
     if [[ "$RELEASE_MODE" == "true" ]]; then
         local release_key="${repo_name}_release"
         if grep -q "^${release_key}=" "$CONFIG_FILE"; then
             section="release_overrides"
-            repo_name="$release_key"
+            config_key="$release_key"
         fi
     fi
     
     # Extract configuration
-    local config=$(grep "^${repo_name}=" "$CONFIG_FILE" 2>/dev/null || echo "")
+    local config=$(grep "^${config_key}=" "$CONFIG_FILE" 2>/dev/null || echo "")
     if [[ -n "$config" ]]; then
         echo "${config#*=}"
     else
-        print_error "No configuration found for repository: $1"
+        print_error "No configuration found for repository: $1 (looked for key: $config_key)"
         return 1
     fi
 }

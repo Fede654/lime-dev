@@ -476,6 +476,58 @@ verify_firmware_file() {
     
     if [[ ! -f "$FIRMWARE_FILE" ]]; then
         print_error "Firmware file not found: $FIRMWARE_FILE"
+        print_error ""
+        print_error "Common locations for firmware files:"
+        print_error "• ./build/bin/targets/ath79/generic/*.bin"
+        print_error "• ~/Downloads/*.bin"
+        print_error "• Current directory: $(pwd)"
+        print_error ""
+        
+        # List available firmware files in common locations
+        print_info "Searching for existing firmware files..."
+        local found_files=()
+        
+        # Check build directory
+        if [[ -d "./build/bin/targets" ]]; then
+            while IFS= read -r -d '' file; do
+                found_files+=("$file")
+            done < <(find "./build/bin/targets" -name "*.bin" -type f -print0 2>/dev/null)
+        fi
+        
+        # Check current directory
+        while IFS= read -r -d '' file; do
+            found_files+=("$file")
+        done < <(find "." -maxdepth 1 -name "*.bin" -type f -print0 2>/dev/null)
+        
+        # Check Downloads
+        if [[ -d "$HOME/Downloads" ]]; then
+            while IFS= read -r -d '' file; do
+                found_files+=("$file")
+            done < <(find "$HOME/Downloads" -name "*librerouter*.bin" -o -name "*libremesh*.bin" -type f -print0 2>/dev/null | head -z -20)
+        fi
+        
+        if [[ ${#found_files[@]} -gt 0 ]]; then
+            print_info "Found firmware files:"
+            for file in "${found_files[@]}"; do
+                local size_mb=$(( $(stat -c%s "$file" 2>/dev/null || echo 0) / 1024 / 1024 ))
+                print_info "  $(basename "$file") (${size_mb}MB) at: $file"
+            done
+            print_info ""
+            print_info "Use: $0 $ROUTER_IP <firmware_file>"
+        else
+            print_warning "No firmware files found in common locations"
+        fi
+        
+        print_error ""
+        print_error "Download firmware from: https://downloads.libremesh.org/"
+        print_error "Look for: librerouter-v1-*-sysupgrade.bin"
+        exit 1
+    fi
+    
+    # Check if file is readable
+    if [[ ! -r "$FIRMWARE_FILE" ]]; then
+        print_error "Firmware file is not readable: $FIRMWARE_FILE"
+        print_error "Check file permissions: ls -la '$FIRMWARE_FILE'"
         exit 1
     fi
     
