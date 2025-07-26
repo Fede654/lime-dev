@@ -55,11 +55,14 @@ cd lime-dev
 ### Build Firmware
 
 ```bash
-# Build LibreRouterOS for x86_64
+# Build LibreRouterOS for x86_64 (using configured sources)
 ./lime build configs/example_config_x86_64
 
 # Build for LibreRouter hardware
 ./lime build configs/example_config_librerouter
+
+# Build with local development sources
+./lime build --local configs/example_config_x86_64
 
 # Docker-based build
 ./lime build docker librerouter-v1
@@ -154,18 +157,18 @@ lime-dev/
 
 ```bash
 # Setup development environment
-./lime setup install
+./lime setup
 
 # Edit packages in repos/lime-packages/
 # Edit firmware in repos/librerouteros/
 
-# Build and test
-./lime build configs/example_config_x86_64
+# Build with local sources for development
+./lime build --local configs/example_config_x86_64
 ./lime qemu start
 
 # Clean build
 ./lime clean
-./lime build configs/example_config_x86_64
+./lime build --local configs/example_config_x86_64
 ```
 
 ### lime-app Development
@@ -234,8 +237,12 @@ export JOBS=$(nproc)
 export DOWNLOAD_DIR=/path/to/cache
 ./lime build configs/example_config_librerouter
 
-# Verbose build output
+# Local development with verbose output
 export V=s
+./lime build --local configs/example_config_x86_64
+
+# Force local mode for all packages
+export LIME_LOCAL_MODE=true
 ./lime build configs/example_config_x86_64
 ```
 
