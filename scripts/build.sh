@@ -227,11 +227,26 @@ main() {
     print_info "LibreMesh Build Management"
     print_info "Method: $method"
     print_info "Target: $target"
+    if [[ -n "$LIME_BUILD_MODE" ]]; then
+        print_info "Build Mode: $LIME_BUILD_MODE"
+    fi
     print_info ""
     
     if [[ "$clean_mode" == "true" ]]; then
         clean_build "$clean_type"
         exit 0
+    fi
+    
+    # Validate build mode configuration before expensive build operations
+    if [[ -n "$LIME_BUILD_MODE" ]]; then
+        print_info "Validating build mode configuration..."
+        if ! "$SCRIPT_DIR/utils/validate-build-mode.sh" "$LIME_BUILD_MODE" "$LIME_BUILD_DIR/build"; then
+            print_error "Build mode validation failed. This prevents expensive failed builds."
+            print_error "Fix the configuration issues above before proceeding."
+            exit 1
+        fi
+        print_info "✅ Build mode validation passed"
+        print_info ""
     fi
     
     check_setup
