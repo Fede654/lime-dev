@@ -47,30 +47,46 @@ parse_config() {
     ' "$config_file"
 }
 
-# Parse repository information (URL|branch|remote)
-parse_repository() {
-    local repo_key="$1"
-    local mode="${2:-development}"
+# Parse source resolution from unified [sources] section
+parse_source() {
+    local package="$1"
+    local mode="${2:-default}"
     local config_file="${3:-$VERSIONS_CONFIG}"
     
-    # Check for mode-specific overrides first
-    if [[ "$mode" == "development" ]]; then
-        local dev_override="${repo_key}_development"
-        local dev_config=$(parse_config "development_overrides" "$dev_override" "$config_file")
-        if [[ -n "$dev_config" ]]; then
-            echo "$dev_config"
+    # Check build_defaults first - extract just the value, not the comment
+    local use_local_repos=$(parse_config "build_defaults" "use_local_repos" "$config_file" | cut -d' ' -f1)
+    
+    # If use_local_repos=true or mode=local, force local resolution
+    if [[ "$use_local_repos" == "true" || "$mode" == "local" ]]; then
+        # Check for explicit local override in [sources]
+        local local_override=$(parse_config "sources" "$package" "$config_file")
+        if [[ "$local_override" =~ ^local: ]]; then
+            echo "$local_override"
             return 0
-        fi
-    elif [[ "$mode" == "release" ]]; then
-        local release_override="${repo_key}_release"
-        local release_config=$(parse_config "release_overrides" "$release_override" "$config_file")
-        if [[ -n "$release_config" ]]; then
-            echo "$release_config"
+        else
+            # Default to LIME_BUILD_DIR/repos/ directory
+            echo "local:$LIME_BUILD_DIR/repos/$package"
             return 0
         fi
     fi
     
-    # Fall back to regular repository definition
+    # Normal source resolution from [sources] section
+    local source=$(parse_config "sources" "$package" "$config_file")
+    if [[ -n "$source" ]]; then
+        echo "$source"
+        return 0
+    fi
+    
+    print_error "No source configuration found for package: $package"
+    return 1
+}
+
+# Parse repository information (URL|branch|remote)
+parse_repository() {
+    local repo_key="$1"
+    local config_file="${2:-$VERSIONS_CONFIG}"
+    
+    # Simply use the repository definition from [repositories] section
     parse_config "repositories" "$repo_key" "$config_file"
 }
 
@@ -93,7 +109,7 @@ repository_to_feed() {
 
 # Generate environment variables for build system
 generate_build_environment() {
-    local mode="${1:-development}"
+    local mode="${1:-default}"
     local config_file="${2:-$VERSIONS_CONFIG}"
     
     # Only print info if not in quiet mode
@@ -101,11 +117,11 @@ generate_build_environment() {
         print_info "Generating build environment for $mode mode"
     fi
     
-    # Parse repository configurations
-    local lime_packages_repo=$(parse_repository "lime_packages" "$mode" "$config_file")
-    local librerouteros_repo=$(parse_repository "librerouteros" "$mode" "$config_file")
-    local openwrt_repo=$(parse_repository "openwrt" "$mode" "$config_file")
-    local kconfig_utils_repo=$(parse_repository "kconfig_utils" "$mode" "$config_file")
+    # Parse repository configurations (no mode needed - single source of truth)
+    local lime_packages_repo=$(parse_repository "lime-packages" "$config_file")
+    local librerouteros_repo=$(parse_repository "librerouteros" "$config_file")
+    local openwrt_repo=$(parse_repository "openwrt" "$config_file")
+    local kconfig_utils_repo=$(parse_repository "kconfig-utils" "$config_file")
     
     # Parse build configurations
     local openwrt_version=$(parse_config "firmware_versions" "openwrt_version" "$config_file")
@@ -114,7 +130,7 @@ generate_build_environment() {
     
     # Validate essential configurations
     if [[ -z "$lime_packages_repo" ]]; then
-        print_error "lime_packages repository configuration missing"
+        print_error "lime-packages repository configuration missing"
         return 1
     fi
     
@@ -123,8 +139,41 @@ generate_build_environment() {
         return 1
     fi
     
-    # Generate feed configurations
-    local libremesh_feed=$(repository_to_feed "$lime_packages_repo" "libremesh")
+    # Generate feed configurations based on mode
+    local libremesh_feed
+    if [[ "$mode" == "local" ]]; then
+        # Use local file:// URL for local mode
+        local lime_packages_source=$(parse_source "lime-packages" "$mode" "$config_file")
+        if [[ "$lime_packages_source" =~ ^local:(.+)$ ]]; then
+            local source_spec="${BASH_REMATCH[1]}"
+            
+            # Parse local source: /path/to/repo[:branch]
+            local local_path branch_spec
+            if [[ "$source_spec" =~ ^([^:]+):(.+)$ ]]; then
+                local_path="${BASH_REMATCH[1]}"
+                branch_spec="${BASH_REMATCH[2]}"
+            else
+                local_path="$source_spec"
+                branch_spec=""
+            fi
+            
+            # If no branch specified in source, use current checked-out branch
+            if [[ -z "$branch_spec" && -d "$local_path/.git" ]]; then
+                branch_spec=$(cd "$local_path" && git branch --show-current 2>/dev/null || echo "")
+            fi
+            
+            libremesh_feed="src-git libremesh file://$local_path${branch_spec:+;$branch_spec}"
+        else
+            # Fallback to repository info if local source not found
+            libremesh_feed=$(repository_to_feed "$lime_packages_repo" "libremesh")
+        fi
+    else
+        # Use configured repository for default mode
+        libremesh_feed=$(repository_to_feed "$lime_packages_repo" "libremesh")
+    fi
+    
+    # LIME_BUILD_MODE only used for logging - always 'unified' now
+    local build_mode="unified"
     
     # Output environment variables
     cat << EOF
@@ -132,7 +181,7 @@ generate_build_environment() {
 # Generated on $(date)
 # Mode: $mode
 
-# Repository Feed Configurations
+# Repository Feed Configurations (generated directly from config)
 export LIBREMESH_FEED="$libremesh_feed"
 export LIBREROUTER_FEED="src-link librerouter \$(dirname \$(realpath \${BASH_SOURCE}))/packages"
 export AMPR_FEED="src-git ampr https://github.com/javierbrk/ampr-openwrt.git;patch-1"
@@ -143,8 +192,8 @@ export OPENWRT_VERSION="$openwrt_version"
 export LIBREMESH_VERSION="$libremesh_version"
 export BUILD_TARGET_DEFAULT="$default_target"
 
-# Build Mode
-export LIME_BUILD_MODE="$mode"
+# Build Mode (for logging and validation only)
+export LIME_BUILD_MODE="$build_mode"
 
 # Repository Information (for verification)
 export LIME_PACKAGES_REPO="$lime_packages_repo"

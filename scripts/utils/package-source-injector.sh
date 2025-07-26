@@ -31,32 +31,14 @@ print_error() {
     echo "[PACKAGE-INJECTOR] ERROR: $1" >&2
 }
 
-# Parse package source configuration from versions.conf
+# Parse package source configuration using unified [sources] system
 get_package_source() {
     local package_name="$1"
-    local mode="${2:-development}"
+    local mode="${2:-default}"
     local config_file="${3:-$VERSIONS_CONFIG}"
     
-    # Check for mode-specific package source
-    local package_key="${package_name}_${mode}"
-    local package_source=$(parse_config "package_sources" "$package_key" "$config_file")
-    
-    if [[ -n "$package_source" ]]; then
-        echo "$package_source"
-        return 0
-    fi
-    
-    # Fall back to production source
-    local production_key="${package_name}_production"
-    local production_source=$(parse_config "package_sources" "$production_key" "$config_file")
-    
-    if [[ -n "$production_source" ]]; then
-        echo "$production_source"
-        return 0
-    fi
-    
-    # No package source defined
-    return 1
+    # Use unified parse_source function from versions-parser.sh
+    parse_source "$package_name" "$mode" "$config_file"
 }
 
 # Parse makefile patch configuration
@@ -65,6 +47,52 @@ get_makefile_patch_config() {
     local config_file="${2:-$VERSIONS_CONFIG}"
     
     parse_config "makefile_patches" "$package_name" "$config_file"
+}
+
+# Build lime-app if needed for local development
+build_lime_app_if_needed() {
+    local source_location="$1"
+    
+    if [[ ! -d "$source_location" ]]; then
+        print_error "lime-app source directory not found: $source_location"
+        return 1
+    fi
+    
+    print_info "Building lime-app for local development..."
+    
+    # Check if build directory exists and is recent
+    local build_dir="$source_location/build"
+    local src_dir="$source_location/src"
+    
+    if [[ -d "$build_dir" && -d "$src_dir" ]]; then
+        # Check if build is newer than source changes
+        local build_time=$(stat -c %Y "$build_dir" 2>/dev/null || echo 0)
+        local src_time=$(find "$src_dir" -type f -newer "$build_dir" -print -quit 2>/dev/null)
+        
+        if [[ -n "$src_time" ]] || [[ ! -f "$build_dir/index.html" ]]; then
+            print_info "Source changes detected, rebuilding lime-app..."
+        else
+            print_info "lime-app build is up to date"
+            return 0
+        fi
+    fi
+    
+    # Build lime-app
+    cd "$source_location"
+    if [[ -f "package.json" ]] && command -v npm >/dev/null 2>&1; then
+        print_info "Running npm run build:production..."
+        if npm run build:production; then
+            print_info "lime-app build completed successfully"
+        else
+            print_error "lime-app build failed"
+            return 1
+        fi
+    else
+        print_warning "npm or package.json not found, skipping build"
+    fi
+    
+    cd - >/dev/null
+    return 0
 }
 
 # Generate source-specific Makefile variables
@@ -77,12 +105,19 @@ generate_makefile_variables() {
     
     case "$source_type" in
         "local")
-            # Local repository source - use git protocol for local development
-            echo "PKG_SOURCE_PROTO=git"
-            echo "PKG_SOURCE_URL=file://$source_location"
-            echo "PKG_SOURCE_VERSION=$version"
-            echo "PKG_SOURCE=\$(PKG_NAME)-\$(PKG_VERSION).tar.gz"
-            echo "PKG_VERSION=dev-\$(shell cd $source_location && git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
+            if [[ "$package_name" == "lime-app" ]]; then
+                # lime-app specific: use local build directory, no git protocol needed
+                echo "PKG_SOURCE=local-build"
+                echo "PKG_VERSION=dev-\$(shell cd $source_location && git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
+                # Will use custom Build/Compile section instead of extracting tarball
+            else
+                # Other packages: use git protocol for local development
+                echo "PKG_SOURCE_PROTO=git"
+                echo "PKG_SOURCE_URL=file://$source_location"
+                echo "PKG_SOURCE_VERSION=$version"
+                echo "PKG_SOURCE=\$(PKG_NAME)-\$(PKG_VERSION).tar.gz"
+                echo "PKG_VERSION=dev-\$(shell cd $source_location && git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
+            fi
             ;;
         "git")
             # Git repository source
@@ -157,12 +192,37 @@ patch_package_makefile() {
                 done < "$temp_vars"
             } > "$temp_vars.additions"
             
-            # Remove existing variables and add new ones after PKG_NAME
-            awk '
-                /^PKG_NAME:=/ { print; getline; while (getline < "'$temp_vars.additions'") print; next }
-                /^PKG_VERSION:=|^PKG_SOURCE:=|^PKG_SOURCE_URL:=|^PKG_SOURCE_PROTO:=|^PKG_SOURCE_VERSION:=/ { next }
-                { print }
-            ' "$makefile_path" > "$temp_makefile"
+            # lime-app specific patching
+            if [[ "$package_name" == "lime-app" ]]; then
+                # For lime-app, we need to replace both variables and Build/Compile section
+                local source_location=$(echo "$source_spec" | cut -d':' -f2)
+                
+                # Add custom Build/Compile section for lime-app
+                {
+                    echo ""
+                    echo "# lime-app local development Build/Compile override"
+                    echo "define Build/Compile"
+                    echo "	# Copy pre-built files from local lime-app build directory"
+                    echo "	\$(INSTALL_DIR) \$(PKG_BUILD_DIR)/build"
+                    echo "	\$(CP) $source_location/build/* \$(PKG_BUILD_DIR)/build/"
+                    echo "endef"
+                } >> "$temp_vars.additions"
+                
+                # Remove existing variables and Build/Compile, add new ones after PKG_NAME
+                awk '
+                    /^PKG_NAME:=/ { print; getline; while (getline < "'$temp_vars.additions'") print; next }
+                    /^PKG_VERSION:=|^PKG_SOURCE:=|^PKG_SOURCE_URL:=|^PKG_SOURCE_PROTO:=|^PKG_SOURCE_VERSION:=/ { next }
+                    /^define Build\/Compile/,/^endef/ { next }
+                    { print }
+                ' "$makefile_path" > "$temp_makefile"
+            else
+                # Standard patching for other packages
+                awk '
+                    /^PKG_NAME:=/ { print; getline; while (getline < "'$temp_vars.additions'") print; next }
+                    /^PKG_VERSION:=|^PKG_SOURCE:=|^PKG_SOURCE_URL:=|^PKG_SOURCE_PROTO:=|^PKG_SOURCE_VERSION:=/ { next }
+                    { print }
+                ' "$makefile_path" > "$temp_makefile"
+            fi
             
             # Apply the patched Makefile
             mv "$temp_makefile" "$makefile_path"
@@ -276,6 +336,19 @@ apply_package_injection() {
             continue
         fi
         
+        # lime-app specific: Build npm project for local mode
+        if [[ "$package_name" == "lime-app" && "$mode" == "local" ]]; then
+            local source_type=$(echo "$source_spec" | cut -d':' -f1)
+            if [[ "$source_type" == "local" ]]; then
+                local source_location=$(echo "$source_spec" | cut -d':' -f2)
+                if ! build_lime_app_if_needed "$source_location"; then
+                    print_error "Failed to build lime-app, skipping Makefile patching"
+                    ((failed_count++))
+                    continue
+                fi
+            fi
+        fi
+        
         # Get makefile patch configuration
         local patch_config
         if ! patch_config=$(get_makefile_patch_config "$package_name"); then
@@ -293,6 +366,7 @@ apply_package_injection() {
         
         # Apply the patch
         if patch_package_makefile "$package_name" "$makefile_path" "$source_spec" "$patch_config" "$mode"; then
+            print_info "Successfully patched $makefile_path"
             ((patched_count++))
         else
             ((failed_count++))
@@ -352,16 +426,17 @@ Commands:
     help                Show this help
 
 Parameters:
-    mode                Build mode (development|release) [default: development]
+    mode                Source mode (default|local) [default: default]
     build_dir           Build directory path [default: ./build]
 
 Environment Variables:
     LIME_BUILD_MODE     Default build mode
 
 Examples:
-    package-source-injector.sh apply development
+    package-source-injector.sh apply default
+    package-source-injector.sh apply local  
     package-source-injector.sh restore
-    package-source-injector.sh test development
+    package-source-injector.sh test local
 EOF
             ;;
         *)

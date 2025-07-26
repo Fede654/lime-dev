@@ -54,9 +54,9 @@ inject_build_environment() {
     print_info "  OpenWrt Version: $OPENWRT_VERSION"
     print_info "  Build Target: $BUILD_TARGET_DEFAULT"
     
-    # Apply package-level source injection if in development mode
-    if [[ "$mode" == "development" ]] && [[ -x "$SCRIPT_DIR/package-source-injector.sh" ]]; then
-        print_info "Applying package-level source injection for development mode"
+    # Apply package-level source injection for all modes (unified system)
+    if [[ -x "$SCRIPT_DIR/package-source-injector.sh" ]]; then
+        print_info "Applying package-level source injection for $mode mode"
         if ! "$SCRIPT_DIR/package-source-injector.sh" apply "$mode" "$BUILD_DIR"; then
             print_warn "Package source injection failed, continuing with feed defaults"
         fi

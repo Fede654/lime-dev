@@ -86,17 +86,25 @@ apply_patches() {
     # Apply patches using sed
     print_info "Patching feed configurations..."
     
-    # Replace hardcoded LIBREMESH_FEED with environment variable
-    sed -i 's|^lo:define_default_value LIBREMESH_FEED.*|lo:define_default_value LIBREMESH_FEED "${LIBREMESH_FEED:-src-git libremesh https://github.com/libremesh/lime-packages.git}"|' "$temp_script"
+    # Remove the entire LIME_BUILD_MODE switch and replace with simple environment variable
+    print_info "Removing LIME_BUILD_MODE switch..."
     
-    # Replace hardcoded LIBREROUTER_FEED with environment variable
-    sed -i 's|^lo:define_default_value LIBREROUTER_FEED.*|lo:define_default_value LIBREROUTER_FEED "${LIBREROUTER_FEED:-src-link librerouter \\$(dirname \\$(realpath \\${BASH_SOURCE}))/packages}"|' "$temp_script"
+    # Create replacement content in a temporary file to avoid escaping issues
+    cat > "/tmp/lime_simplified_feed.txt" << 'EOF'
+# LIME-DEV SIMPLIFIED FEED CONFIGURATION: Direct environment variable usage
+lo:define_default_value LIBREMESH_FEED "${LIBREMESH_FEED:-src-git libremesh https://github.com/libremesh/lime-packages.git;master}"
+EOF
     
-    # Replace hardcoded AMPR_FEED with environment variable
-    sed -i 's|^lo:define_default_value AMPR_FEED.*|lo:define_default_value AMPR_FEED "${AMPR_FEED:-src-git ampr https://github.com/javierbrk/ampr-openwrt.git;patch-1}"|' "$temp_script"
+    # Replace the entire switch block with simplified version
+    sed -i '/# LIME-DEV UNIFIED BUILD MODE: Respect LIME_BUILD_MODE for feed selection/,/^esac$/{
+        r /tmp/lime_simplified_feed.txt
+        d
+    }' "$temp_script"
     
-    # Replace hardcoded TMATE_FEED with environment variable
-    sed -i 's|^lo:define_default_value TMATE_FEED.*|lo:define_default_value TMATE_FEED "${TMATE_FEED:-src-git tmate https://github.com/project-openwrt/openwrt-tmate.git}"|' "$temp_script"
+    rm -f "/tmp/lime_simplified_feed.txt"
+    
+    # Other feed configurations are handled by environment injection
+    print_info "Other feeds will be set via environment variables"
     
     # Add patch marker and environment info
     cat > "/tmp/lime_patch_header.txt" << 'EOF'
@@ -125,10 +133,10 @@ EOF
 
 ## Lime-Dev Environment Integration
 ## Load environment variables from umbrella repository if available
-if [[ -n "$LIME_BUILD_DIR" && -f "$LIME_BUILD_DIR/scripts/utils/inject-build-environment.sh" ]]; then
+if [[ -n "$LIME_BUILD_DIR" && -f "$LIME_BUILD_DIR/scripts/utils/versions-parser.sh" ]]; then
     # Source environment from umbrella repository
-    source <("$LIME_BUILD_DIR/scripts/utils/versions-parser.sh" environment "${LIME_BUILD_MODE:-development}")
-    echo "[LIME-DEV] Using umbrella repository configuration (mode: ${LIME_BUILD_MODE:-development})"
+    source <("$LIME_BUILD_DIR/scripts/utils/versions-parser.sh" environment development)
+    echo "[LIME-DEV] Using umbrella repository configuration"
     echo "[LIME-DEV] LibreMesh feed: $LIBREMESH_FEED"
 fi
 

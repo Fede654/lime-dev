@@ -58,12 +58,12 @@ validate_mode() {
     
     if [[ -z "$mode" ]]; then
         echo "Usage: $0 <mode> [build_dir]"
-        echo "Modes: development, release"
+        echo "Modes: default, local"
         exit 1
     fi
     
-    if [[ "$mode" != "development" && "$mode" != "release" ]]; then
-        print_fail "Invalid build mode: $mode (must be development or release)"
+    if [[ "$mode" != "default" && "$mode" != "local" ]]; then
+        print_fail "Invalid source mode: $mode (must be default or local)"
         exit 1
     fi
 }
@@ -75,6 +75,9 @@ test_environment_injection() {
     local pass_count=0
     
     print_test "Environment variable injection for $mode mode"
+    
+    # Always use unified environment generation
+    print_info "  Using unified environment generation with source override for $mode"
     
     # Generate environment in temporary file
     local temp_env=$(mktemp)
@@ -105,22 +108,49 @@ test_environment_injection() {
         fi
     done
     
-    # Test mode-specific values
+    # Test that LIME_BUILD_MODE is unified
     ((test_count++))
-    if [[ "$LIME_BUILD_MODE" == "$mode" ]]; then
-        print_pass "  Build mode matches requested: $mode"
+    if [[ "$LIME_BUILD_MODE" == "unified" ]]; then
+        print_pass "  Build mode is unified (no legacy modes)"
         ((pass_count++))
     else
-        print_fail "  Build mode mismatch: expected $mode, got $LIME_BUILD_MODE"
+        print_fail "  Build mode should be 'unified', got $LIME_BUILD_MODE"
     fi
     
     # Test feed configuration matches expected from config
     ((test_count++))
-    local expected_feed_repo=$(parse_repository "lime_packages" "$mode" "$VERSIONS_CONFIG")
-    if [[ -n "$expected_feed_repo" ]]; then
-        local expected_feed=$(repository_to_feed "$expected_feed_repo" "libremesh")
+    local expected_feed
+    if [[ "$mode" == "local" ]]; then
+        # For local mode, generate expected feed using same logic as environment generation
+        local lime_packages_source=$(parse_source "lime-packages" "$mode" "$VERSIONS_CONFIG")
+        if [[ "$lime_packages_source" =~ ^local:(.+)$ ]]; then
+            local source_spec="${BASH_REMATCH[1]}"
+            local local_path branch_spec
+            if [[ "$source_spec" =~ ^([^:]+):(.+)$ ]]; then
+                local_path="${BASH_REMATCH[1]}"
+                branch_spec="${BASH_REMATCH[2]}"
+            else
+                local_path="$source_spec"
+                branch_spec=""
+            fi
+            if [[ -z "$branch_spec" && -d "$local_path/.git" ]]; then
+                branch_spec=$(cd "$local_path" && git branch --show-current 2>/dev/null || echo "")
+            fi
+            expected_feed="src-git libremesh file://$local_path${branch_spec:+;$branch_spec}"
+        else
+            # Fallback to repository info
+            local expected_feed_repo=$(parse_repository "lime-packages" "$VERSIONS_CONFIG")
+            expected_feed=$(repository_to_feed "$expected_feed_repo" "libremesh")
+        fi
+    else
+        # For default mode, use repository info
+        local expected_feed_repo=$(parse_repository "lime-packages" "$VERSIONS_CONFIG")
+        expected_feed=$(repository_to_feed "$expected_feed_repo" "libremesh")
+    fi
+    
+    if [[ -n "$expected_feed" ]]; then
         if [[ "$LIBREMESH_FEED" == "$expected_feed" ]]; then
-            print_pass "  Feed matches configuration for $mode mode: $LIBREMESH_FEED"
+            print_pass "  Feed matches configuration: $LIBREMESH_FEED"
             ((pass_count++))
         else
             print_fail "  Feed configuration mismatch for $mode mode:"
@@ -144,8 +174,8 @@ test_package_source_resolution() {
     
     print_test "Package source resolution for $mode mode"
     
-    # Get packages that should have source resolution  
-    local packages=$(awk '/^\[package_sources\]/{flag=1;next}/^\[/{flag=0}flag && /^[^#]/ && /=/{print $1}' FS='=' "$VERSIONS_CONFIG" | sed 's/_production$//' | sed 's/_development$//' | sort -u)
+    # Get all packages from unified [sources] section
+    local packages=$(awk '/^\[sources\]/{flag=1;next}/^\[/{flag=0}flag && /^[^#]/ && /=/{print $1}' FS='=' "$VERSIONS_CONFIG" | sort -u)
     
     if [[ -z "$packages" ]]; then
         print_info "  No packages configured for source resolution"
@@ -155,24 +185,14 @@ test_package_source_resolution() {
     for package in $packages; do
         ((test_count++))
         
-        # Try mode-specific source first
-        local mode_key="${package}_${mode}"
-        local source_spec=$(parse_config "package_sources" "$mode_key" "$VERSIONS_CONFIG")
+        # Use new unified source resolution
+        local source_spec=$(parse_source "$package" "$mode" "$VERSIONS_CONFIG")
         
         if [[ -n "$source_spec" ]]; then
-            print_pass "  $package ($mode): $source_spec"
+            print_pass "  $package: $source_spec"
             ((pass_count++))
         else
-            # Try production fallback
-            local prod_key="${package}_production"
-            local prod_source=$(parse_config "package_sources" "$prod_key" "$VERSIONS_CONFIG")
-            
-            if [[ -n "$prod_source" ]]; then
-                print_pass "  $package (fallback to production): $prod_source"
-                ((pass_count++))
-            else
-                print_fail "  $package: No source configuration found"
-            fi
+            print_fail "  $package: No source configuration found"
         fi
     done
     
@@ -193,15 +213,39 @@ test_conditional_resolution() {
     ((test_count++))
     print_info "  Testing build system feed resolution..."
     
-    # Get expected feed from configuration
-    local expected_feed_repo=$(parse_repository "lime_packages" "$mode" "$VERSIONS_CONFIG")
-    if [[ -z "$expected_feed_repo" ]]; then
-        print_fail "  No lime_packages repository configured for $mode mode"
-        return 1
+    # Generate expected feed using same logic as environment generation
+    local expected_feed
+    if [[ "$mode" == "local" ]]; then
+        # For local mode, generate expected feed using same logic as environment generation
+        local lime_packages_source=$(parse_source "lime-packages" "$mode" "$VERSIONS_CONFIG")
+        if [[ "$lime_packages_source" =~ ^local:(.+)$ ]]; then
+            local source_spec="${BASH_REMATCH[1]}"
+            local local_path branch_spec
+            if [[ "$source_spec" =~ ^([^:]+):(.+)$ ]]; then
+                local_path="${BASH_REMATCH[1]}"
+                branch_spec="${BASH_REMATCH[2]}"
+            else
+                local_path="$source_spec"
+                branch_spec=""
+            fi
+            if [[ -z "$branch_spec" && -d "$local_path/.git" ]]; then
+                branch_spec=$(cd "$local_path" && git branch --show-current 2>/dev/null || echo "")
+            fi
+            expected_feed="src-git libremesh file://$local_path${branch_spec:+;$branch_spec}"
+        else
+            # Fallback to repository info
+            local expected_feed_repo=$(parse_repository "lime-packages" "$VERSIONS_CONFIG")
+            expected_feed=$(repository_to_feed "$expected_feed_repo" "libremesh")
+        fi
+    else
+        # For default mode, use repository info
+        local expected_feed_repo=$(parse_repository "lime-packages" "$VERSIONS_CONFIG")
+        if [[ -z "$expected_feed_repo" ]]; then
+            print_fail "  No lime-packages repository configured for $mode mode"
+            return 1
+        fi
+        expected_feed=$(repository_to_feed "$expected_feed_repo" "libremesh")
     fi
-    
-    # Convert repository spec to feed format
-    local expected_feed=$(repository_to_feed "$expected_feed_repo" "libremesh")
     
     # Generate environment and extract actual resolved feed
     local temp_env=$(mktemp)
@@ -227,33 +271,26 @@ test_conditional_resolution() {
     ((test_count++))
     print_info "  Testing package source resolution..."
     
-    local packages=$(awk '/^\[package_sources\]/{flag=1;next}/^\[/{flag=0}flag && /^[^#]/ && /=/{print $1}' FS='=' "$VERSIONS_CONFIG" | sed 's/_production$//' | sed 's/_development$//' | sort -u)
+    local packages=$(awk '/^\[sources\]/{flag=1;next}/^\[/{flag=0}flag && /^[^#]/ && /=/{print $1}' FS='=' "$VERSIONS_CONFIG" | sort -u)
     
     if [[ -n "$packages" ]]; then
         local package_resolution_ok=true
         for package in $packages; do
-            # Test what source would be resolved
-            local resolved_source=$(parse_config "package_sources" "${package}_${mode}" "$VERSIONS_CONFIG")
-            if [[ -z "$resolved_source" ]]; then
-                resolved_source=$(parse_config "package_sources" "${package}_production" "$VERSIONS_CONFIG")
-            fi
+            # Test what source would be resolved using unified architecture
+            local resolved_source=$(parse_source "$package" "$mode" "$VERSIONS_CONFIG")
             
             if [[ -n "$resolved_source" ]]; then
-                case "$mode" in
-                    "development")
-                        if [[ "$resolved_source" == local:* ]]; then
-                            local repo_path=$(echo "$resolved_source" | cut -d':' -f2)
-                            if [[ -d "$repo_path" ]]; then
-                                print_info "    $package → local repository: $repo_path"
-                            else
-                                print_fail "    $package → local repository not found: $repo_path"
-                                package_resolution_ok=false
-                            fi
-                        else
-                            print_info "    $package → remote source: $resolved_source"
-                        fi
-                        ;;
-                esac
+                if [[ "$resolved_source" == local:* ]]; then
+                    local repo_path=$(echo "$resolved_source" | cut -d':' -f2)
+                    if [[ -d "$repo_path" ]]; then
+                        print_info "    $package → local repository: $repo_path"
+                    else
+                        print_fail "    $package → local repository not found: $repo_path"
+                        package_resolution_ok=false
+                    fi
+                else
+                    print_info "    $package → remote source: $resolved_source"
+                fi
             else
                 print_fail "    $package → no source resolution"
                 package_resolution_ok=false
@@ -289,12 +326,30 @@ test_feed_consistency() {
     if [[ -f "$feeds_conf" ]]; then
         ((test_count++))
         
-        # Get expected feed URL from configuration
-        local expected_feed_repo=$(parse_repository "lime_packages" "$mode" "$VERSIONS_CONFIG")
-        if [[ -n "$expected_feed_repo" ]]; then
-            # Extract URL from repository spec (format: url|branch|remote)
-            local expected_url=$(echo "$expected_feed_repo" | cut -d'|' -f1)
-            
+        # Get expected feed URL based on mode
+        local expected_url
+        if [[ "$mode" == "local" ]]; then
+            # For local mode, expect local file:// URL
+            local lime_packages_source=$(parse_source "lime-packages" "$mode" "$VERSIONS_CONFIG")
+            if [[ "$lime_packages_source" =~ ^local:(.+)$ ]]; then
+                local source_spec="${BASH_REMATCH[1]}"
+                local local_path
+                if [[ "$source_spec" =~ ^([^:]+):(.+)$ ]]; then
+                    local_path="${BASH_REMATCH[1]}"
+                else
+                    local_path="$source_spec"
+                fi
+                expected_url="file://$local_path"
+            fi
+        else
+            # For default mode, expect remote URL from repository config
+            local expected_feed_repo=$(parse_repository "lime-packages" "$VERSIONS_CONFIG")
+            if [[ -n "$expected_feed_repo" ]]; then
+                expected_url=$(echo "$expected_feed_repo" | cut -d'|' -f1)
+            fi
+        fi
+        
+        if [[ -n "$expected_url" ]]; then
             if grep -q "$expected_url" "$feeds_conf"; then
                 print_pass "  feeds.conf contains configured libremesh feed: $expected_url"
                 ((pass_count++))
@@ -318,11 +373,30 @@ test_feed_consistency() {
             cd "$libremesh_feed_dir"
             local remote_url=$(git remote get-url origin 2>/dev/null || echo "")
             
-            # Get expected repository URL from configuration
-            local expected_feed_repo=$(parse_repository "lime_packages" "$mode" "$VERSIONS_CONFIG")
-            if [[ -n "$expected_feed_repo" ]]; then
-                local expected_url=$(echo "$expected_feed_repo" | cut -d'|' -f1)
-                
+            # Get expected repository URL based on mode
+            local expected_url
+            if [[ "$mode" == "local" ]]; then
+                # For local mode, expect local file:// URL
+                local lime_packages_source=$(parse_source "lime-packages" "$mode" "$VERSIONS_CONFIG")
+                if [[ "$lime_packages_source" =~ ^local:(.+)$ ]]; then
+                    local source_spec="${BASH_REMATCH[1]}"
+                    local local_path
+                    if [[ "$source_spec" =~ ^([^:]+):(.+)$ ]]; then
+                        local_path="${BASH_REMATCH[1]}"
+                    else
+                        local_path="$source_spec"
+                    fi
+                    expected_url="file://$local_path"
+                fi
+            else
+                # For default mode, expect remote URL from repository config
+                local expected_feed_repo=$(parse_repository "lime-packages" "$VERSIONS_CONFIG")
+                if [[ -n "$expected_feed_repo" ]]; then
+                    expected_url=$(echo "$expected_feed_repo" | cut -d'|' -f1)
+                fi
+            fi
+            
+            if [[ -n "$expected_url" ]]; then
                 if [[ "$remote_url" == "$expected_url" ]]; then
                     print_pass "  LibreMesh feed points to configured repository: $remote_url"
                     ((pass_count++))
@@ -388,10 +462,13 @@ test_business_logic_immutability() {
     source "$temp_env1"
     local expected_mode="$LIME_BUILD_MODE"
     
-    if [[ "$expected_mode" == "$mode" ]]; then
-        print_pass "  Conditional logic produces expected mode: $expected_mode"
+    # With unified architecture, always expect "unified" mode
+    local expected_mode_check="unified"
+    
+    if [[ "$expected_mode" == "$expected_mode_check" ]]; then
+        print_pass "  Conditional logic produces expected mode: $mode"
     else
-        print_fail "  Conditional logic mode mismatch: expected $mode, got $expected_mode"
+        print_fail "  Conditional logic mode mismatch: expected $expected_mode_check (for $mode mode), got $expected_mode"
         rm -f "$temp_env1" "$temp_env2" 
         return 1
     fi
@@ -402,12 +479,26 @@ test_business_logic_immutability() {
 }
 
 # Main test runner
+validate_build_directory() {
+    local build_dir="$1"
+    
+    # If build_dir is provided and not empty, validate it exists
+    if [[ -n "$build_dir" && "$build_dir" != "$LIME_DEV_ROOT/build" ]]; then
+        if [[ ! -d "$build_dir" ]]; then
+            print_fail "Build directory does not exist: $build_dir"
+            echo -e "${RED}❌ Specify a valid build directory or omit parameter to use default.${NC}"
+            exit 1
+        fi
+    fi
+}
+
 main() {
     local mode="$1"
     local build_dir="$2"
     local total_failures=0
     
     validate_mode "$mode"
+    validate_build_directory "$build_dir"
     
     print_header "Build Mode Configuration Validation"
     print_info "Mode: $mode"
