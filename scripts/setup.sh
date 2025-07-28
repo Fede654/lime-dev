@@ -259,7 +259,7 @@ main() {
             
             # Post-update validation
             if [[ "$skip_validation" == "false" ]]; then
-                local update_mode="development"
+                local update_mode="default"
                 if [[ "$release_mode" == "true" ]]; then
                     update_mode="release"
                 fi
