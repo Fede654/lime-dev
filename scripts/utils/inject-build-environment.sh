@@ -207,18 +207,18 @@ Modes:
     release        Use release override repositories
 
 Examples:
-    $0 inject development
+    $0 inject default
     $0 verify
     $0 show
     $0 export release /tmp/release_env.sh
-    $0 exec development ./scripts/build.sh x86_64
+    $0 exec default ./scripts/build.sh x86_64
 
 Environment Usage:
     # Source environment directly
-    source <($0 export development -)
+    source <($0 export default -)
     
     # Use in scripts
-    $0 inject development
+    $0 inject default
     if $0 verify; then
         echo "Environment ready for build"
     fi

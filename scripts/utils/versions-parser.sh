@@ -221,7 +221,7 @@ EOF
 
 # Verify repository versions match configuration
 verify_repository_versions() {
-    local mode="${1:-development}"
+    local mode="${1:-default}"
     local config_file="${2:-$VERSIONS_CONFIG}"
     
     print_info "Verifying repository versions..."
@@ -295,22 +295,22 @@ main() {
             ;;
         repository)
             local repo_key="${1:-lime_packages}"
-            local mode="${2:-development}"
+            local mode="${2:-default}"
             parse_repository "$repo_key" "$mode"
             ;;
         feed)
             local repo_key="${1:-lime_packages}"
-            local mode="${2:-development}"
+            local mode="${2:-default}"
             local feed_name="${3:-libremesh}"
             local repo_info=$(parse_repository "$repo_key" "$mode")
             repository_to_feed "$repo_info" "$feed_name"
             ;;
         environment)
-            local mode="${1:-development}"
+            local mode="${1:-default}"
             generate_build_environment "$mode"
             ;;
         verify)
-            local mode="${1:-development}"
+            local mode="${1:-default}"
             verify_repository_versions "$mode"
             ;;
         help|--help|-h)
@@ -328,14 +328,14 @@ Commands:
     help                           Show this help message
 
 Modes:
-    development    Use standard repositories (default)
+    default        Use standard repositories (default)
     release        Use release override repositories
 
 Examples:
     $0 parse repositories lime_packages
     $0 repository lime_packages release
-    $0 feed lime_packages development libremesh
-    $0 environment development
+    $0 feed lime_packages default libremesh
+    $0 environment default
     $0 verify release
 
 EOF
