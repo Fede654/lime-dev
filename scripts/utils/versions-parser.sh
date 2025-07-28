@@ -122,10 +122,10 @@ generate_build_environment() {
     fi
     
     # Parse repository configurations (no mode needed - single source of truth)
-    local lime_packages_repo=$(parse_repository "lime-packages" "$config_file")
-    local librerouteros_repo=$(parse_repository "librerouteros" "$config_file")
-    local openwrt_repo=$(parse_repository "openwrt" "$config_file")
-    local kconfig_utils_repo=$(parse_repository "kconfig-utils" "$config_file")
+    local lime_packages_repo=$(parse_repository "lime-packages-repo" "$config_file")
+    local librerouteros_repo=$(parse_repository "librerouteros-repo" "$config_file")
+    local openwrt_repo=$(parse_repository "openwrt-repo" "$config_file")
+    local kconfig_utils_repo=$(parse_repository "kconfig-utils-repo" "$config_file")
     
     # Parse build configurations
     local openwrt_version=$(parse_config "firmware_versions" "openwrt_version" "$config_file")
