@@ -167,7 +167,7 @@ main() {
             
             # Post-setup validation
             if [[ "$skip_validation" == "false" ]]; then
-                local setup_mode="development"
+                local setup_mode="default"
                 if [[ "$release_mode" == "true" ]]; then
                     setup_mode="release"
                 fi
@@ -204,7 +204,7 @@ main() {
             
             # Post-setup validation for automated setup too
             if [[ "$skip_validation" == "false" ]]; then
-                local setup_mode="development"
+                local setup_mode="default"
                 if [[ "$release_mode" == "true" ]]; then
                     setup_mode="release"
                 fi

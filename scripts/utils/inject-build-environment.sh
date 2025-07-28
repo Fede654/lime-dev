@@ -30,7 +30,7 @@ print_error() {
 
 # Generate and source build environment
 inject_build_environment() {
-    local mode="${1:-development}"
+    local mode="${1:-default}"
     local temp_env_file="/tmp/lime_build_env_$$.sh"
     
     print_info "Injecting build environment for $mode mode"
@@ -123,7 +123,7 @@ show_environment() {
 
 # Export environment to a file for sourcing
 export_environment() {
-    local mode="${1:-development}"
+    local mode="${1:-default}"
     local output_file="${2:-/tmp/lime_build_env.sh}"
     
     print_info "Exporting build environment to $output_file"
@@ -169,7 +169,7 @@ main() {
     
     case "$command" in
         inject)
-            local mode="${1:-development}"
+            local mode="${1:-default}"
             inject_build_environment "$mode"
             ;;
         verify)
@@ -179,12 +179,12 @@ main() {
             show_environment
             ;;
         export)
-            local mode="${1:-development}"
+            local mode="${1:-default}"
             local output_file="${2:-/tmp/lime_build_env.sh}"
             export_environment "$mode" "$output_file"
             ;;
         exec)
-            local mode="${1:-development}"
+            local mode="${1:-default}"
             shift
             execute_with_environment "$mode" "$@"
             ;;
@@ -203,7 +203,7 @@ Commands:
     help                         Show this help message
 
 Modes:
-    development    Use standard repositories (default)
+    default        Use standard repositories (default)
     release        Use release override repositories
 
 Examples:
