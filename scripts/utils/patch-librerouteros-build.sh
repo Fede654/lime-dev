@@ -139,6 +139,26 @@ function configure_remove_luci()
     print_info "✓ LuCI removal applied manually"
 }
 
+# Apply single patch file to script
+apply_patch_file() {
+    local script_file="$1"
+    local patch_name="$2"
+    local patch_file="$LIME_BUILD_DIR/patches/$patch_name"
+    
+    if [[ ! -f "$patch_file" ]]; then
+        print_warn "Patch not found: $patch_file"
+        return 1
+    fi
+    
+    if patch --dry-run -p1 -d "$(dirname "$script_file")" < "$patch_file" >/dev/null 2>&1; then
+        patch -p1 -d "$(dirname "$script_file")" < "$patch_file"
+        print_info "✓ Applied: $patch_name"
+    else
+        print_warn "Could not apply: $patch_name (already applied or conflicts)"
+        return 1
+    fi
+}
+
 # Apply patches to make script respect umbrella repo configuration
 apply_patches() {
     if is_patched; then
