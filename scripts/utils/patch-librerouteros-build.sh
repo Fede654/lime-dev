@@ -70,6 +70,75 @@ is_patched() {
     grep -q "# LIME-DEV PATCH APPLIED" "$LIBREROUTEROS_BUILD_SCRIPT" 2>/dev/null
 }
 
+# Apply LuCI removal patch - disables LuCI when lime-app is enabled
+apply_luci_removal_patch() {
+    local script_file="$1"
+    local patch_file="$LIME_BUILD_DIR/patches/remove-luci-with-lime-app.patch"
+    
+    print_info "Applying LuCI removal patch..."
+    
+    if [[ ! -f "$patch_file" ]]; then
+        print_warn "LuCI removal patch not found: $patch_file"
+        return 0
+    fi
+    
+    # Apply the patch file to the build script
+    if patch --dry-run -p1 -d "$(dirname "$script_file")" < "$patch_file" >/dev/null 2>&1; then
+        patch -p1 -d "$(dirname "$script_file")" < "$patch_file"
+        print_info "✓ LuCI removal patch applied successfully"
+    else
+        print_warn "LuCI removal patch could not be applied (already applied or conflicts)"
+        # Fall back to manual application
+        apply_luci_removal_manual "$script_file"
+    fi
+}
+
+# Manual LuCI removal application for cases where patch fails
+apply_luci_removal_manual() {
+    local script_file="$1"
+    
+    # Check if already applied
+    if grep -q "configure_remove_luci" "$script_file"; then
+        print_info "LuCI removal already applied manually"
+        return 0
+    fi
+    
+    print_info "Applying LuCI removal manually..."
+    
+    # Add configure_remove_luci function after configure_remove_unused_packages
+    local luci_function='
+function configure_remove_luci()
+{
+	kconfig_unset CONFIG_PACKAGE_luci-base
+	kconfig_unset CONFIG_PACKAGE_luci-compat
+	kconfig_unset CONFIG_PACKAGE_luci-lua-runtime
+	kconfig_unset CONFIG_PACKAGE_luci-lib-base
+	kconfig_unset CONFIG_PACKAGE_luci-lib-httpclient
+	kconfig_unset CONFIG_PACKAGE_luci-lib-httpprotoutils
+	kconfig_unset CONFIG_PACKAGE_luci-lib-ip
+	kconfig_unset CONFIG_PACKAGE_luci-lib-jsonc
+	kconfig_unset CONFIG_PACKAGE_luci-lib-nixio
+}'
+    
+    # Insert the function after configure_remove_unused_packages
+    sed -i '/^function configure_remove_unused_packages()/,/^}$/a\
+\
+'"$luci_function" "$script_file"
+    
+    # Add call to configure_remove_luci in configure_librerouteros function
+    local luci_call_with_comment='
+	# Remove LuCI packages - lime-app replaces web interface completely
+	# This prevents OpenWrt defconfig from auto-enabling conflicting LuCI components
+	configure_remove_luci
+'
+    
+    # Insert the call after lime-app and lime-docs-minimal are set
+    sed -i '/kconfig_set CONFIG_PACKAGE_lime-docs-minimal/a\
+'"$luci_call_with_comment" "$script_file"
+    
+    print_info "✓ LuCI removal applied manually"
+}
+
 # Apply patches to make script respect umbrella repo configuration
 apply_patches() {
     if is_patched; then
@@ -153,9 +222,13 @@ EOF
     mv "$temp_script" "$LIBREROUTEROS_BUILD_SCRIPT"
     chmod +x "$LIBREROUTEROS_BUILD_SCRIPT"
     
+    # Apply LuCI removal patch
+    apply_luci_removal_patch "$temp_script"
+    
     print_info "✓ Patches applied successfully"
     print_info "  - Feed configurations now respect environment variables"
     print_info "  - Environment integration added"
+    print_info "  - LuCI packages disabled when lime-app is enabled"
     print_info "  - Backup preserved for restoration"
     
     return 0
