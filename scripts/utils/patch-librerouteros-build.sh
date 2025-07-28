@@ -67,7 +67,11 @@ restore_backup() {
 
 # Check if script is already patched
 is_patched() {
-    grep -q "# LIME-DEV PATCH APPLIED" "$LIBREROUTEROS_BUILD_SCRIPT" 2>/dev/null
+    if [[ -f "$LIBREROUTEROS_BUILD_SCRIPT" ]]; then
+        grep -q "LIME-DEV PATCHES APPLIED\|LIME-DEV PATCH APPLIED" "$LIBREROUTEROS_BUILD_SCRIPT" 2>/dev/null
+    else
+        return 1
+    fi
 }
 
 # Apply LuCI removal patch - disables LuCI when lime-app is enabled
@@ -98,7 +102,7 @@ apply_luci_removal_manual() {
     local script_file="$1"
     
     # Check if already applied
-    if grep -q "configure_remove_luci" "$script_file"; then
+    if grep -q "configure_remove_luci" "$script_file" 2>/dev/null; then
         print_info "LuCI removal already applied manually"
         return 0
     fi
@@ -147,6 +151,11 @@ apply_patch_file() {
     
     if [[ ! -f "$patch_file" ]]; then
         print_warn "Patch not found: $patch_file"
+        return 1
+    fi
+    
+    if [[ ! -f "$script_file" ]]; then
+        print_warn "Script file not found: $script_file"
         return 1
     fi
     
@@ -207,13 +216,15 @@ d
     # Apply LuCI removal patch
     apply_luci_removal_patch "$temp_script"
     
-    # Add simple patch marker
-    sed -i '/^# COPYLEFT$/a\
+    # Add simple patch marker (only if not already present)
+    if ! grep -q "LIME-DEV PATCHES APPLIED" "$temp_script"; then
+        sed -i '/^# COPYLEFT$/a\
 # LIME-DEV PATCHES APPLIED\
 # This script has been patched using .patch files\
 # Generated on: '"$(date)"'\
 # Patch version: 2.0 (using standard .patch files)\
 #' "$temp_script"
+    fi
     
     # Replace original script with patched version
     mv "$temp_script" "$LIBREROUTEROS_BUILD_SCRIPT"
