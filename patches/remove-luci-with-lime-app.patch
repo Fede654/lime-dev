@@ -1,0 +1,59 @@
+From: LibreRouter Development <dev@librerouter.org>
+Date: Mon, 28 Jul 2025 17:30:00 +0000
+Subject: [PATCH] Remove LuCI packages when lime-app is enabled
+
+lime-app is a standalone web interface that uses ubus calls directly,
+completely replacing LuCI functionality. However, OpenWrt's defconfig
+automatically enables LuCI packages by default, causing redundancy
+and potential conflicts.
+
+This patch explicitly disables LuCI packages when lime-app is configured,
+reducing firmware size and eliminating interface conflicts.
+
+Packages disabled:
+- luci-base, luci-compat, luci-lua-runtime (core LuCI)
+- luci-lib-* (6 library modules)
+
+This ensures lime-app remains the sole web interface in LibreRouterOS builds.
+
+Signed-off-by: LibreRouter Development <dev@librerouter.org>
+---
+ librerouteros_build.sh | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/librerouteros_build.sh b/librerouteros_build.sh
+index 1234567..abcdefg 100755
+--- a/librerouteros_build.sh
++++ b/librerouteros_build.sh
+@@ -126,6 +126,16 @@ function configure_remove_unused_packages()
+ 	kconfig_unset CONFIG_PACKAGE_kmod-pppox
+ }
+ 
++function configure_remove_luci()
++{
++	kconfig_unset CONFIG_PACKAGE_luci-base
++	kconfig_unset CONFIG_PACKAGE_luci-compat
++	kconfig_unset CONFIG_PACKAGE_luci-lua-runtime
++	kconfig_unset CONFIG_PACKAGE_luci-lib-base
++	kconfig_unset CONFIG_PACKAGE_luci-lib-httpclient
++	kconfig_unset CONFIG_PACKAGE_luci-lib-httpprotoutils
++	kconfig_unset CONFIG_PACKAGE_luci-lib-ip
++	kconfig_unset CONFIG_PACKAGE_luci-lib-jsonc
++	kconfig_unset CONFIG_PACKAGE_luci-lib-nixio
++}
++
+ function configure_librerouteros()
+ {
+ 	configure_libremesh
+@@ -133,6 +143,11 @@ function configure_librerouteros()
+ 
+ 	kconfig_set CONFIG_PACKAGE_lime-app
+ 	kconfig_set CONFIG_PACKAGE_lime-docs-minimal
++
++	# Remove LuCI packages - lime-app replaces web interface completely
++	# This prevents OpenWrt defconfig from auto-enabling conflicting LuCI components
++	configure_remove_luci
++
+ 	kconfig_set CONFIG_PACKAGE_check-date-http
+ 	kconfig_set CONFIG_PACKAGE_deferrable-reboot
+ 	kconfig_set CONFIG_PACKAGE_eupgrade
