@@ -189,11 +189,16 @@ EOF
     if ! apply_patch_file "$temp_script" "librerouteros-feed-config.patch"; then
         print_warn "Feed config patch failed, using fallback"
         # Fallback: Replace the entire switch block with simplified version
-        sed -i '/# LIME-DEV UNIFIED BUILD MODE: Respect LIME_BUILD_MODE for feed selection/,/^esac$/{
-        r /tmp/lime_simplified_feed.txt
-        d
-    }' "$temp_script"
-        rm -f "/tmp/lime_simplified_feed.txt"
+        if sed -i '/# LIME-DEV UNIFIED BUILD MODE: Respect LIME_BUILD_MODE for feed selection/,/^esac$/{
+r /tmp/lime_simplified_feed.txt
+d
+}' "$temp_script" 2>/dev/null; then
+            rm -f "/tmp/lime_simplified_feed.txt"
+            print_info "✓ Feed config applied via fallback"
+        else
+            rm -f "/tmp/lime_simplified_feed.txt"
+            print_warn "Feed config fallback also failed"
+        fi
     fi
     
     # Apply AMPR enable patch
