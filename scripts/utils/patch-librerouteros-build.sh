@@ -184,59 +184,31 @@ apply_patches() {
 lo:define_default_value LIBREMESH_FEED "${LIBREMESH_FEED:-src-git libremesh https://github.com/libremesh/lime-packages.git;master}"
 EOF
     
-    # Replace the entire switch block with simplified version
-    sed -i '/# LIME-DEV UNIFIED BUILD MODE: Respect LIME_BUILD_MODE for feed selection/,/^esac$/{
+    # Use .patch files instead of complex sed operations
+    print_info "Applying feed configuration patch..."
+    if ! apply_patch_file "$temp_script" "librerouteros-feed-config.patch"; then
+        print_warn "Feed config patch failed, using fallback"
+        # Fallback: Replace the entire switch block with simplified version
+        sed -i '/# LIME-DEV UNIFIED BUILD MODE: Respect LIME_BUILD_MODE for feed selection/,/^esac$/{
         r /tmp/lime_simplified_feed.txt
         d
     }' "$temp_script"
+        rm -f "/tmp/lime_simplified_feed.txt"
+    fi
     
-    rm -f "/tmp/lime_simplified_feed.txt"
+    # Apply AMPR enable patch
+    apply_patch_file "$temp_script" "librerouteros-ampr-enable.patch" || print_warn "AMPR patch failed"
     
-    # Other feed configurations are handled by environment injection
-    print_info "Other feeds will be set via environment variables"
+    # Apply LuCI removal patch
+    apply_luci_removal_patch "$temp_script"
     
-    # Add patch marker and environment info
-    cat > "/tmp/lime_patch_header.txt" << 'EOF'
-# LIME-DEV PATCH APPLIED
-# This script has been patched to respect umbrella repository configuration
-# Generated on: $(date)
-# Patch version: 1.0
-#
-# The following environment variables are now respected:
-# - LIBREMESH_FEED: LibreMesh packages feed configuration
-# - LIBREROUTER_FEED: LibreRouter packages feed configuration
-# - AMPR_FEED: AMPR packages feed configuration
-# - TMATE_FEED: TMATE packages feed configuration
-#
-# To restore original behavior, run:
-# lime-dev/scripts/utils/patch-librerouteros-build.sh restore
-#
-
-EOF
-    
-    # Insert patch header after the existing header
-    sed -i '/^# COPYLEFT$/r /tmp/lime_patch_header.txt' "$temp_script"
-    
-    # Add environment variable initialization section
-    cat > "/tmp/lime_env_init.txt" << 'EOF'
-
-## Lime-Dev Environment Integration
-## Load environment variables from umbrella repository if available
-if [[ -n "$LIME_BUILD_DIR" && -f "$LIME_BUILD_DIR/scripts/utils/versions-parser.sh" ]]; then
-    # Source environment from umbrella repository
-    source <("$LIME_BUILD_DIR/scripts/utils/versions-parser.sh" environment development)
-    echo "[LIME-DEV] Using umbrella repository configuration"
-    echo "[LIME-DEV] LibreMesh feed: $LIBREMESH_FEED"
-fi
-
-EOF
-    
-    # Insert environment initialization after the function definitions
-    sed -i '/^lo:define_default_value BUILD_TARGET/i\
-'"$(cat /tmp/lime_env_init.txt)" "$temp_script"
-    
-    # Clean up temporary files
-    rm -f "/tmp/lime_patch_header.txt" "/tmp/lime_env_init.txt"
+    # Add simple patch marker
+    sed -i '/^# COPYLEFT$/a\
+# LIME-DEV PATCHES APPLIED\
+# This script has been patched using .patch files\
+# Generated on: '"$(date)"'\
+# Patch version: 2.0 (using standard .patch files)\
+#' "$temp_script"
     
     # Replace original script with patched version
     mv "$temp_script" "$LIBREROUTEROS_BUILD_SCRIPT"
