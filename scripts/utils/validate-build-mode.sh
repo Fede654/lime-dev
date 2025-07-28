@@ -139,12 +139,12 @@ test_environment_injection() {
             expected_feed="src-git libremesh file://$local_path${branch_spec:+;$branch_spec}"
         else
             # Fallback to repository info
-            local expected_feed_repo=$(parse_repository "lime-packages" "$VERSIONS_CONFIG")
+            local expected_feed_repo=$(parse_repository "lime-packages-repo" "$VERSIONS_CONFIG")
             expected_feed=$(repository_to_feed "$expected_feed_repo" "libremesh")
         fi
     else
         # For default mode, use repository info
-        local expected_feed_repo=$(parse_repository "lime-packages" "$VERSIONS_CONFIG")
+        local expected_feed_repo=$(parse_repository "lime-packages-repo" "$VERSIONS_CONFIG")
         expected_feed=$(repository_to_feed "$expected_feed_repo" "libremesh")
     fi
     
@@ -234,12 +234,12 @@ test_conditional_resolution() {
             expected_feed="src-git libremesh file://$local_path${branch_spec:+;$branch_spec}"
         else
             # Fallback to repository info
-            local expected_feed_repo=$(parse_repository "lime-packages" "$VERSIONS_CONFIG")
+            local expected_feed_repo=$(parse_repository "lime-packages-repo" "$VERSIONS_CONFIG")
             expected_feed=$(repository_to_feed "$expected_feed_repo" "libremesh")
         fi
     else
         # For default mode, use repository info
-        local expected_feed_repo=$(parse_repository "lime-packages" "$VERSIONS_CONFIG")
+        local expected_feed_repo=$(parse_repository "lime-packages-repo" "$VERSIONS_CONFIG")
         if [[ -z "$expected_feed_repo" ]]; then
             print_fail "  No lime-packages repository configured for $mode mode"
             return 1
@@ -343,7 +343,7 @@ test_feed_consistency() {
             fi
         else
             # For default mode, expect remote URL from repository config
-            local expected_feed_repo=$(parse_repository "lime-packages" "$VERSIONS_CONFIG")
+            local expected_feed_repo=$(parse_repository "lime-packages-repo" "$VERSIONS_CONFIG")
             if [[ -n "$expected_feed_repo" ]]; then
                 expected_url=$(echo "$expected_feed_repo" | cut -d'|' -f1)
             fi
@@ -390,7 +390,7 @@ test_feed_consistency() {
                 fi
             else
                 # For default mode, expect remote URL from repository config
-                local expected_feed_repo=$(parse_repository "lime-packages" "$VERSIONS_CONFIG")
+                local expected_feed_repo=$(parse_repository "lime-packages-repo" "$VERSIONS_CONFIG")
                 if [[ -n "$expected_feed_repo" ]]; then
                     expected_url=$(echo "$expected_feed_repo" | cut -d'|' -f1)
                 fi
