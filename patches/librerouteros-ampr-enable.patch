@@ -1,0 +1,13 @@
+--- a/librerouteros_build.sh
++++ b/librerouteros_build.sh
+@@ -114,8 +114,8 @@ function configure_libremesh()
+ 	kconfig_set CONFIG_PACKAGE_shared-state-ref_state_commons
+ 	kconfig_set CONFIG_PACKAGE_shared-state-wifi_links_info
+ 
+-	#kconfig_set CONFIG_PACKAGE_amprd
+-	#kconfig_set CONFIG_PACKAGE_ampr-ripd
++	kconfig_set CONFIG_PACKAGE_amprd
++	kconfig_set CONFIG_PACKAGE_ampr-ripd
+ 
+ 	local mNetifdGitSrc="$LIBREROUTEROS_BUILD_DIR/package/network/config/netifd/git-src"
+ 	rm -f "$mNetifdGitSrc"

@@ -1,0 +1,26 @@
+--- a/librerouteros_build.sh
++++ b/librerouteros_build.sh
+@@ -45,21 +45,9 @@ lo:define_default_value LIBREROUTEROS_BUILD_DIR "$HOME/Builds/librerouterOS-$BU
+ lo:define_default_value LIBREROUTEROS_DIR "$HOME/Development/librerouteros/"
+ 
+-# LIME-DEV UNIFIED BUILD MODE: Respect LIME_BUILD_MODE for feed selection
+-case "${LIME_BUILD_MODE:-development}" in
+-    development)
+-        # Development mode: Use experimental packages for rapid iteration
+-        lo:define_default_value LIBREMESH_FEED "${LIBREMESH_FEED:-src-git libremesh https://github.com/javierbrk/lime-packages.git;final-release}"
+-        ;;
+-    release)
+-        # Release mode: Use stable upstream packages
+-        lo:define_default_value LIBREMESH_FEED "${LIBREMESH_FEED:-src-git libremesh https://github.com/libremesh/lime-packages.git;master}"
+-        ;;
+-    *)
+-        # Unknown mode: default to development
+-        lo:define_default_value LIBREMESH_FEED "${LIBREMESH_FEED:-src-git libremesh https://github.com/javierbrk/lime-packages.git;final-release}"
+-        ;;
+-esac
++# LIME-DEV SIMPLIFIED FEED CONFIGURATION: Direct environment variable usage
++# LIBREMESH_FEED is now generated directly by lime-dev versions-parser.sh
++lo:define_default_value LIBREMESH_FEED "${LIBREMESH_FEED:-src-git libremesh https://github.com/libremesh/lime-packages.git;master}"
+ 
+ # LIME-DEV: Use fixed absolute path for librerouter feed
+ lo:define_default_value LIBREROUTER_FEED "src-link librerouter /home/fede/REPOS/lime-dev/repos/librerouteros/packages"
