@@ -35,6 +35,19 @@ check_directory() {
     fi
 }
 
+# Global error tracking
+declare -g UPDATE_ERRORS=0
+declare -g UPDATE_WARNINGS=()
+
+# Verbose mode flag
+VERBOSE=${VERBOSE:-false}
+
+print_verbose() {
+    if [[ "$VERBOSE" == "true" ]]; then
+        echo "[VERBOSE] $1"
+    fi
+}
+
 # Update a specific repository with smart remote tracking
 update_repo() {
     local repo_name="$1"
@@ -43,30 +56,37 @@ update_repo() {
     
     if [[ ! -d "$repo_path" ]]; then
         print_error "$repo_name not found in repos/"
+        ((UPDATE_ERRORS++))
         return 1
     fi
     
-    print_info "Updating $repo_name..."
+    # Simple progress indicator
+    echo -n "  $repo_name..."
     cd "$repo_path"
     
     # Get current branch and tracking info
     current_branch=$(git branch --show-current 2>/dev/null || git rev-parse --abbrev-ref HEAD)
     
-    # Fetch all remotes
-    print_info "  Fetching from all remotes..."
-    git fetch --all --prune
+    # Fetch all remotes (suppress output unless verbose)
+    print_verbose "  Fetching from all remotes..."
+    if [[ "$VERBOSE" == "true" ]]; then
+        git fetch --all --prune
+    else
+        git fetch --all --prune >/dev/null 2>&1
+    fi
     
     # Check if we're on a detached HEAD (like OpenWrt tag)
     if [[ "$current_branch" == "HEAD" ]] || git rev-parse --verify HEAD >/dev/null 2>&1 && ! git symbolic-ref HEAD >/dev/null 2>&1; then
-        print_info "  Repository is on detached HEAD (likely a tag), skipping pull"
+        print_verbose "  Repository is on detached HEAD (likely a tag), skipping pull"
+        echo " detached HEAD (tag)"
     else
         # Get the current tracking branch info
         local tracking_info=$(git status -b --porcelain=v1 2>/dev/null | head -1)
         local upstream_remote=""
         local upstream_branch=""
         
-        # Parse tracking info to get remote and branch
-        if [[ "$tracking_info" =~ \[([^/]+)/([^\]]+) ]]; then
+        # Parse tracking info to get remote and branch from format: ## branch...remote/branch
+        if [[ "$tracking_info" =~ \.\.\.([^/]+)/(.+)$ ]]; then
             upstream_remote="${BASH_REMATCH[1]}"
             upstream_branch="${BASH_REMATCH[2]}"
         fi
@@ -74,39 +94,51 @@ update_repo() {
         # Determine what to pull from
         if [[ -n "$upstream_remote" && -n "$upstream_branch" ]]; then
             # Current branch has upstream tracking - use it
-            print_info "  Pulling from tracked upstream: $upstream_remote/$upstream_branch..."
+            print_verbose "  Pulling from tracked upstream: $upstream_remote/$upstream_branch..."
             if git show-ref --verify --quiet "refs/remotes/$upstream_remote/$upstream_branch"; then
-                git pull "$upstream_remote" "$upstream_branch"
-                print_success "  $repo_name updated from $upstream_remote/$upstream_branch"
+                if [[ "$VERBOSE" == "true" ]]; then
+                    git pull "$upstream_remote" "$upstream_branch"
+                else
+                    git pull "$upstream_remote" "$upstream_branch" >/dev/null 2>&1
+                fi
+                echo " ✓ updated"
             else
-                print_error "  Tracked upstream $upstream_remote/$upstream_branch not found"
+                echo " ⚠ upstream not found"
+                UPDATE_WARNINGS+=("$repo_name: Tracked upstream $upstream_remote/$upstream_branch not found")
             fi
         else
             # No upstream tracking, try origin with current or default branch
             local branch_to_pull="${current_branch:-$default_branch}"
-            print_info "  No upstream tracking found, trying origin/$branch_to_pull..."
+            print_verbose "  No upstream tracking found, trying origin/$branch_to_pull..."
             
             if git show-ref --verify --quiet "refs/remotes/origin/$branch_to_pull"; then
-                git pull origin "$branch_to_pull"
-                print_success "  $repo_name updated from origin/$branch_to_pull"
+                if [[ "$VERBOSE" == "true" ]]; then
+                    git pull origin "$branch_to_pull"
+                else
+                    git pull origin "$branch_to_pull" >/dev/null 2>&1
+                fi
+                echo " ✓ updated"
             else
-                print_error "  Branch origin/$branch_to_pull not found, skipping pull"
+                echo " ⚠ not published"
+                UPDATE_WARNINGS+=("$repo_name: Branch origin/$branch_to_pull not found (likely unpublished local branch)")
             fi
         fi
     fi
     
-    # Show current status with tracking info
-    local current_commit=$(git rev-parse --short HEAD)
-    local current_ref=$(git describe --tags --exact-match 2>/dev/null || git branch --show-current 2>/dev/null || echo "detached")
-    local tracking_status=$(git status -b --porcelain=v1 2>/dev/null | head -1 | grep -o '\[.*\]' || echo "")
-    print_info "  Current: $current_ref ($current_commit) $tracking_status"
+    # Show current status with tracking info (verbose only)
+    if [[ "$VERBOSE" == "true" ]]; then
+        local current_commit=$(git rev-parse --short HEAD)
+        local current_ref=$(git describe --tags --exact-match 2>/dev/null || git branch --show-current 2>/dev/null || echo "detached")
+        local tracking_status=$(git status -b --porcelain=v1 2>/dev/null | head -1 | grep -o '\[.*\]' || echo "")
+        print_verbose "  Current: $current_ref ($current_commit) $tracking_status"
+    fi
     
     cd "$WORK_DIR"
 }
 
 # Update all repositories
 update_all_repos() {
-    print_info "Updating all repositories in repos/ directory..."
+    echo "Updating repositories..."
     
     # Update each repository - now respects current branch tracking
     # Default branches provided as fallback only
@@ -117,22 +149,52 @@ update_all_repos() {
     
     # Special handling for OpenWrt (tagged version)
     if [[ -d "$REPOS_DIR/openwrt" ]]; then
-        print_info "Checking OpenWrt status..."
+        print_verbose "Checking OpenWrt status..."
         cd "$REPOS_DIR/openwrt"
         local current_tag=$(git describe --tags --exact-match 2>/dev/null || echo "none")
-        print_info "  OpenWrt is at: $current_tag"
+        echo -n "  openwrt..."
+        echo " detached HEAD (tag: $current_tag)"
         cd "$WORK_DIR"
     fi
     
-    print_success "All repositories updated!"
+    echo
+    
+    # Report final status with warnings and errors - prominently displayed
+    if [[ ${#UPDATE_WARNINGS[@]} -gt 0 ]]; then
+        echo "⚠️  WARNING: Some repositories had issues:"
+        for warning in "${UPDATE_WARNINGS[@]}"; do
+            echo "   • $warning"
+        done
+        echo ""
+    fi
+    
+    if [[ $UPDATE_ERRORS -gt 0 ]]; then
+        echo "❌ UPDATE FAILED: $UPDATE_ERRORS errors occurred"
+        echo "   Some repositories may not be properly updated"
+        echo ""
+    else
+        echo "✅ All repositories processed successfully"
+        echo ""
+    fi
     
     # Apply lime-dev patches to librerouteros build script
-    print_info "Applying lime-dev integration patches..."
-    if [[ -f "$WORK_DIR/scripts/utils/patch-librerouteros-build.sh" ]]; then
-        "$WORK_DIR/scripts/utils/patch-librerouteros-build.sh" apply
-    else
-        print_error "Patch script not found, manual intervention may be required"
+    if [[ "$VERBOSE" == "true" ]]; then
+        print_info "Applying lime-dev integration patches..."
     fi
+    
+    if [[ -f "$WORK_DIR/scripts/utils/patch-librerouteros-build.sh" ]]; then
+        if [[ "$VERBOSE" == "true" ]]; then
+            "$WORK_DIR/scripts/utils/patch-librerouteros-build.sh" apply
+        else
+            "$WORK_DIR/scripts/utils/patch-librerouteros-build.sh" apply >/dev/null 2>&1
+        fi
+    else
+        echo "❌ ERROR: Patch script not found, manual intervention may be required"
+        ((UPDATE_ERRORS++))
+    fi
+    
+    # Return appropriate exit code
+    return $UPDATE_ERRORS
 }
 
 # Show repository status
@@ -165,7 +227,9 @@ main() {
     
     case "${1:-update}" in
         "update"|"pull")
-            update_all_repos
+            if ! update_all_repos; then
+                exit 1
+            fi
             ;;
         "status"|"info")
             show_status

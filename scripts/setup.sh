@@ -41,6 +41,8 @@ Options:
     --build-remote-only  Skip local repository cloning, optimize for remote builds
     --export-dot    Export dependency graph as DOT file (use with graph command)
     --skip-validation  Skip post-setup configuration validation (not recommended)
+    --verbose       Show detailed output during operations
+    --show-deps     Show dependency graph after update (auto-enabled with --verbose)
     -h, --help      Show this help
 
 Examples:
@@ -48,6 +50,9 @@ Examples:
     $0 install                  # Setup for local development (clones repositories)
     $0 install --build-remote-only # Setup optimized for CI/CD builds (no local repos)
     $0 install --skip-validation # Setup without post-setup validation (not recommended)
+    $0 update                   # Quick update with minimal output
+    $0 update --verbose         # Detailed update with full diagnostic output
+    $0 update --show-deps       # Update with dependency graph display
     $0 update                   # Update repositories with validation
     $0 graph                    # Detailed dependency analysis
     $0 graph --export-dot       # Export professional graph file
@@ -127,6 +132,14 @@ main() {
                 ;;
             --skip-validation)
                 skip_validation="true"
+                shift
+                ;;
+            --verbose)
+                export VERBOSE=true
+                shift
+                ;;
+            --show-deps)
+                export SHOW_DEPS=true
                 shift
                 ;;
             -h|--help|help)
@@ -250,12 +263,19 @@ main() {
             print_success "Installed lime system-wide via symlink"
             print_info "You can now run 'lime' from anywhere"
             ;;
-        update)
-            print_info "Updating repositories..."
+        update)            
+            if [[ "${VERBOSE:-false}" == "true" ]]; then
+                print_info "Updating repositories..."
+            fi
+            
             "$SCRIPT_DIR/utils/update-repos.sh"
-            echo ""
-            print_info "Repository Status After Update:"
-            "$SCRIPT_DIR/utils/dependency-graph.sh" ascii
+            
+            # Show dependency graph only in verbose mode or if specifically requested
+            if [[ "${VERBOSE:-false}" == "true" || "${SHOW_DEPS:-false}" == "true" ]]; then
+                echo ""
+                print_info "Repository Status After Update:"
+                "$SCRIPT_DIR/utils/dependency-graph.sh" ascii
+            fi
             
             # Post-update validation
             if [[ "$skip_validation" == "false" ]]; then
@@ -264,16 +284,34 @@ main() {
                     update_mode="release"
                 fi
                 
-                print_info ""
-                print_info "🔍 Running post-update configuration validation..."
-                print_info "   Validating updated repositories match expected configuration"
-                
-                if "$SCRIPT_DIR/utils/validate-build-mode.sh" "$update_mode" "$LIME_BUILD_DIR/build"; then
-                    print_success "✅ Update validation passed - repositories properly synchronized"
+                if [[ "${VERBOSE:-false}" == "true" ]]; then
+                    print_info ""
+                    print_info "🔍 Running post-update configuration validation..."
+                    print_info "   Validating updated repositories match expected configuration"
+                    validation_result="$("$SCRIPT_DIR/utils/validate-build-mode.sh" "$update_mode" "$LIME_BUILD_DIR/build")"
+                    echo "$validation_result"
+                    validation_exit_code=$?
                 else
-                    print_error "❌ Update validation failed - repository state inconsistent"
-                    print_error "   Some repositories may not match expected configuration"
-                    print_error "   Run: lime setup update --skip-validation (not recommended)"
+                    # Run validation quietly, only show result
+                    validation_result="$("$SCRIPT_DIR/utils/validate-build-mode.sh" "$update_mode" "$LIME_BUILD_DIR/build" 2>/dev/null)"
+                    validation_exit_code=$?
+                fi
+                
+                if [[ $validation_exit_code -eq 0 ]]; then
+                    if [[ "${VERBOSE:-false}" == "false" ]]; then
+                        echo "✅ Configuration validation passed"
+                    else
+                        print_success "✅ Update validation passed - repositories properly synchronized"
+                    fi
+                else
+                    if [[ "${VERBOSE:-false}" == "false" ]]; then
+                        echo "❌ Configuration validation failed"
+                        echo "   Run with --verbose for details"
+                    else
+                        print_error "❌ Update validation failed - repository state inconsistent"
+                        print_error "   Some repositories may not match expected configuration"
+                        print_error "   Run: lime setup update --skip-validation (not recommended)"
+                    fi
                     exit 1
                 fi
             else

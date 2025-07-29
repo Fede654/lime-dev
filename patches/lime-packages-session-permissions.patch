@@ -1,0 +1,25 @@
+diff --git a/packages/ubus-lime-utils/files/usr/share/rpcd/acl.d/lime-utils.json b/packages/ubus-lime-utils/files/usr/share/rpcd/acl.d/lime-utils.json
+index a32b1c40..37d29f9c 100644
+--- a/packages/ubus-lime-utils/files/usr/share/rpcd/acl.d/lime-utils.json
++++ b/packages/ubus-lime-utils/files/usr/share/rpcd/acl.d/lime-utils.json
+@@ -1,15 +1,17 @@
+ {
+     "lime-app": {
+-        "description": "lime-app public access",
++        "description": "lime-app public access with session management",
+         "read": {
+             "ubus": {
+                     "lime-utils": [ "*" ],
+-                    "system": [ "board" ]
++                    "system": [ "board" ],
++                    "session": [ "access", "login" ]
+             }
+         },
+         "write": {
+             "ubus": {
+-                    "lime-utils": [ "*" ]
++                    "lime-utils": [ "*" ],
++                    "session": [ "login", "destroy" ]
+             }
+         }
+     }
