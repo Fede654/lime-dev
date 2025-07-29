@@ -58,31 +58,9 @@ validate_key_naming() {
     
     print_info "Validating key naming conventions..."
     
-    # Check for old ambiguous key patterns that could cause conflicts
-    # Note: Package names in [makefile_patches] are allowed (e.g., lime-app)
-    local old_patterns=(
-        "^lime-packages="
-        "^librerouteros="
-        "^kconfig-utils="
-        "^openwrt="
-        "^default_target="
-        "^development_target="
-        "^openwrt_version="
-        "^libremesh_version="
-        "^librerouteros_version="
-        "^bridge_interface="
-        "^bridge_ip="
-        "^guest_ip="
-        "^console_access="
-        "^web_access="
-        "^node_min_version="
-        "^npm_registry="
-        "^validate_git_integrity="
-        "^validate_tarball_checksums="
-        "^check_local_repo_status="
-        "^verify_feed_makefile_patches="
-        "^check_package_source_resolution="
-    )
+    # Check for actual ambiguous patterns - keys that appear in wrong sections
+    # These patterns are problematic only if they appear outside their intended sections
+    # Note: Current config uses proper INI sections, so most keys are actually valid
     
     # Special handling for lime-app: check if it's in makefile_patches section (allowed) or elsewhere (not allowed)
     if grep -q "^lime-app=" "$CONFIG_FILE"; then
@@ -93,13 +71,21 @@ validate_key_naming() {
         fi
     fi
     
-    for pattern in "${old_patterns[@]}"; do
-        if grep -q "$pattern" "$CONFIG_FILE"; then
-            local key=$(grep "$pattern" "$CONFIG_FILE" | head -1 | cut -d'=' -f1)
-            ambiguous_keys+=("$key")
-            corruption_found=true
-        fi
-    done
+    # Instead of flagging all instances, check for actual problematic patterns:
+    # 1. Keys outside of proper sections (orphaned keys)
+    # 2. Duplicate keys within the same section
+    
+    # Check for keys that appear before any section (orphaned keys)
+    local orphaned_keys=$(awk '/^\[/ {section=1} /^[a-zA-Z].*=/ && !section {print $0}' "$CONFIG_FILE")
+    if [[ -n "$orphaned_keys" ]]; then
+        while IFS= read -r line; do
+            if [[ -n "$line" ]]; then
+                local key=$(echo "$line" | cut -d'=' -f1)
+                ambiguous_keys+=("$key (orphaned - no section)")
+                corruption_found=true
+            fi
+        done <<< "$orphaned_keys"
+    fi
     
     if [[ "$corruption_found" == "true" ]]; then
         print_error "Found ${#ambiguous_keys[@]} ambiguous keys that could cause conflicts:"

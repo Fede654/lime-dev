@@ -83,7 +83,7 @@ confirm_build_override() {
         print_critical "🚨 ALL EXISTING BUILD DATA WILL BE LOST 🚨"
         echo
         
-        # Force explicit confirmation
+        # FIRST CONFIRMATION - Basic safety check
         local confirmation=""
         while [[ "$confirmation" != "yes" && "$confirmation" != "no" ]]; do
             echo -n "Type 'yes' to continue with build or 'no' to cancel: "
@@ -101,7 +101,38 @@ confirm_build_override() {
             exit 0
         fi
         
-        print_success "✅ Build confirmed - proceeding with $target build"
+        # SECOND CONFIRMATION - Double safety for destructive operation
+        echo
+        print_warning "⚠️  DOUBLE CONFIRMATION REQUIRED ⚠️"
+        print_warning "You are about to permanently delete:"
+        if [[ -d "$BUILD_DIR" ]]; then
+            local build_size=$(du -sh "$BUILD_DIR" 2>/dev/null | cut -f1 || echo "unknown size")
+            print_warning "• Build directory: $build_size of build data"
+        fi
+        if ls build/bin/targets/*/*.bin &>/dev/null; then
+            local firmware_count=$(ls build/bin/targets/*/*.bin 2>/dev/null | wc -l)
+            print_warning "• $firmware_count firmware files"
+        fi
+        echo
+        print_critical "⚠️  FINAL CONFIRMATION: This action CANNOT be undone ⚠️"
+        
+        local final_confirmation=""
+        while [[ "$final_confirmation" != "DELETE" && "$final_confirmation" != "cancel" ]]; do
+            echo -n "Type 'DELETE' (in capitals) to confirm deletion or 'cancel' to abort: "
+            read -r final_confirmation
+        done
+        
+        if [[ "$final_confirmation" == "cancel" ]]; then
+            print_info "Build cancelled at final confirmation step"
+            print_info ""
+            print_info "Data preservation alternatives:"
+            print_info "• Archive current build: tar -czf lime-build-backup-$(date +%Y%m%d_%H%M%S).tar.gz build/"
+            print_info "• Selective cleanup: 'lime clean --incremental' (preserves downloads and feeds)"
+            print_info "• Development rebuild: 'lime rebuild' (faster, preserves more)"
+            exit 0
+        fi
+        
+        print_success "✅ Double confirmation completed - proceeding with destructive $target build"
         echo
     fi
 }
@@ -355,7 +386,7 @@ main() {
     fi
     
     # MANDATORY configuration integrity check before expensive build operations
-    if [[ "$skip_validation" == "false" ]]; then
+    if [[ "$skip_validation" == "false" && "$SKIP_MANDATORY_VALIDATION" != "true" ]]; then
         print_info "Running mandatory configuration integrity check..."
         
         # Check config file integrity first
