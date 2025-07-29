@@ -1,0 +1,37 @@
+diff --git a/librerouteros_build.sh b/librerouteros_build.sh
+index de73ca0f2d..6829d7f92b 100755
+--- a/librerouteros_build.sh
++++ b/librerouteros_build.sh
+@@ -48,7 +48,7 @@ lo:define_default_value LIBREROUTEROS_DIR "$HOME/Development/librerouteros/"
+ #lo:define_default_value LIBREMESH_FEED "src-git libremesh https://github.com/libremesh/lime-packages.git"
+ #lo:define_default_value LIBREMESH_FEED "src-git libremesh https://github.com/javierbrk/lime-packages.git;feature/mesh-config"
+ lo:define_default_value LIBREMESH_FEED "src-git libremesh https://github.com/javierbrk/lime-packages.git;final-release"
+-lo:define_default_value LIBREROUTER_FEED "src-link librerouter $(dirname $(realpath ${BASH_SOURCE}))/packages"
++# LIBREROUTER_FEED will be set dynamically in prepare_target_buildroot()
+ lo:define_default_value AMPR_FEED "src-git ampr https://github.com/javierbrk/ampr-openwrt.git;patch-1"
+ lo:define_default_value TMATE_FEED "src-git tmate https://github.com/project-openwrt/openwrt-tmate.git"
+ lo:define_default_value KCONFIG_UTILS_DIR "$HOME/Development/kconfig-utils/"
+@@ -100,8 +100,8 @@ function configure_libremesh()
+ 	kconfig_set CONFIG_PACKAGE_shared-state-ref_state_commons
+ 	kconfig_set CONFIG_PACKAGE_shared-state-wifi_links_info
+ 
+-	#kconfig_set CONFIG_PACKAGE_amprd
+-	#kconfig_set CONFIG_PACKAGE_ampr-ripd
++	kconfig_set CONFIG_PACKAGE_amprd
++	kconfig_set CONFIG_PACKAGE_ampr-ripd
+ 
+ 	local mNetifdGitSrc="$LIBREROUTEROS_BUILD_DIR/package/network/config/netifd/git-src"
+ 	rm -f "$mNetifdGitSrc"
+@@ -309,7 +309,12 @@ function prepare_target_buildroot()
+ 
+ 	cp ./feeds.conf.default ./feeds.conf
+ 	echo "$LIBREMESH_FEED" >> ./feeds.conf
++	
++	# Set LIBREROUTER_FEED dynamically to avoid path resolution issues
++	local librerouter_packages_dir="$(dirname $(realpath ${BASH_SOURCE[0]}))/packages"
++	export LIBREROUTER_FEED="src-link librerouter $librerouter_packages_dir"
+ 	echo "$LIBREROUTER_FEED" >> ./feeds.conf
++	
+ 	echo "$TMATE_FEED" >> ./feeds.conf
+ 	echo "$AMPR_FEED" >> ./feeds.conf
+ 
