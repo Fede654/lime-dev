@@ -174,15 +174,15 @@ test_package_source_resolution() {
     
     print_test "Package source resolution for $mode mode"
     
-    # Get all packages from unified [sources] section
-    local packages=$(awk '/^\[sources\]/{flag=1;next}/^\[/{flag=0}flag && /^[^#]/ && /=/{print $1}' FS='=' "$VERSIONS_CONFIG" | sort -u)
+    # Test actual packages used in builds, not config variable names
+    local packages=("lime-packages" "lime-app")
     
-    if [[ -z "$packages" ]]; then
+    if [[ ${#packages[@]} -eq 0 ]]; then
         print_info "  No packages configured for source resolution"
         return 0
     fi
     
-    for package in $packages; do
+    for package in "${packages[@]}"; do
         ((test_count++))
         
         # Use new unified source resolution
@@ -272,39 +272,36 @@ test_conditional_resolution() {
     ((test_count++))
     print_info "  Testing package source resolution..."
     
-    local packages=$(awk '/^\[sources\]/{flag=1;next}/^\[/{flag=0}flag && /^[^#]/ && /=/{print $1}' FS='=' "$VERSIONS_CONFIG" | sort -u)
+    # Only validate actual packages that are used in builds, not config variable names
+    # For lime-dev, the main packages that matter are: lime-packages and lime-app
+    local actual_packages=("lime-packages" "lime-app")
     
-    if [[ -n "$packages" ]]; then
-        local package_resolution_ok=true
-        for package in $packages; do
-            # Test what source would be resolved using unified architecture
-            local resolved_source
-            if resolved_source=$(parse_source "$package" "$mode" "$VERSIONS_CONFIG" 2>/dev/null); then
-                if [[ "$resolved_source" == local:* ]]; then
-                    local repo_path=$(echo "$resolved_source" | cut -d':' -f2)
-                    if [[ -d "$repo_path" ]]; then
-                        print_info "    $package → local repository: $repo_path"
-                    else
-                        print_fail "    $package → local repository not found: $repo_path"
-                        package_resolution_ok=false
-                    fi
+    local package_resolution_ok=true
+    for package in "${actual_packages[@]}"; do
+        # Test what source would be resolved using unified architecture
+        local resolved_source
+        if resolved_source=$(parse_source "$package" "$mode" "$VERSIONS_CONFIG" 2>/dev/null); then
+            if [[ "$resolved_source" == local:* ]]; then
+                local repo_path=$(echo "$resolved_source" | cut -d':' -f2 | cut -d':' -f1)
+                if [[ -d "$repo_path" ]]; then
+                    print_info "    $package → local repository: $repo_path"
                 else
-                    print_info "    $package → remote source: $resolved_source"
+                    print_fail "    $package → local repository not found: $repo_path"
+                    package_resolution_ok=false
                 fi
             else
-                print_info "    $package → using defaults (no explicit source configuration)"
+                print_info "    $package → remote source: $resolved_source"
             fi
-        done
-        
-        if $package_resolution_ok; then
-            print_pass "  All packages resolve to valid sources for $mode mode"
-            ((pass_count++))
         else
-            print_fail "  Some packages have invalid source resolution"
+            print_info "    $package → using defaults (no explicit source configuration)"
         fi
-    else
-        print_pass "  No packages configured for source resolution"
+    done
+    
+    if $package_resolution_ok; then
+        print_pass "  All packages resolve to valid sources for $mode mode"
         ((pass_count++))
+    else
+        print_fail "  Some packages have invalid source resolution"
     fi
     
     echo "    Result: $pass_count/$test_count resolution tests passed"
