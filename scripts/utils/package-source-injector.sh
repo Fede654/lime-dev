@@ -214,10 +214,13 @@ patch_package_makefile() {
                 
                 {
                     echo ""
-                    echo "# lime-app local development Build/Prepare override"
+                    echo "# lime-app local development Build/Prepare override  "
                     echo "define Build/Prepare"
                     echo "	\$(INSTALL_DIR) \$(PKG_BUILD_DIR)"
                     echo "	\$(CP) $source_location/build \$(PKG_BUILD_DIR)/"
+                    echo "	# Copy files directory (CGI scripts, config, etc.) - overwrite feed files"
+                    echo "	rm -rf ./files"
+                    echo "	\$(CP) $source_location/files ."
                     echo "endef"
                     echo ""
                 } > "$temp_vars.build_prepare"
