@@ -114,15 +114,15 @@ rebuild_lime_app_only() {
     print_info "🚀 Ultra-fast lime-app rebuild"
     
     check_initial_build_required
-    
+
     cd "$BUILD_DIR"
-    
-    # Apply local sources first
-    apply_local_sources
-    
+
     print_info "Cleaning lime-app..."
     make package/feeds/libremesh/lime-app/clean
-    
+
+    # Apply local sources after clean (clean removes Makefile patches)
+    apply_local_sources
+
     print_info "Rebuilding lime-app..."
     make package/feeds/libremesh/lime-app/compile
     
@@ -193,16 +193,13 @@ rebuild_lime_packages() {
     print_info "📦 Stage 3: All lime-packages rebuild"
     
     check_initial_build_required
-    
+
     cd "$BUILD_DIR"
-    
-    # Apply local sources first
-    apply_local_sources
-    
+
     # List of common lime packages that often change
     local lime_packages=(
         "lime-app"
-        "lime-system" 
+        "lime-system"
         "shared-state"
         "lime-proto-babeld"
         "lime-proto-batadv"
@@ -219,7 +216,10 @@ rebuild_lime_packages() {
             make "package/feeds/libremesh/$pkg/clean" || true
         fi
     done
-    
+
+    # Apply local sources after clean (clean removes Makefile patches)
+    apply_local_sources
+
     print_info "Rebuilding lime packages..."
     for pkg in "${lime_packages[@]}"; do
         if [[ -d "package/feeds/libremesh/$pkg" ]]; then
@@ -275,12 +275,9 @@ rebuild_specific_package() {
     print_info "🎯 Rebuilding specific package: $package"
     
     check_initial_build_required
-    
+
     cd "$BUILD_DIR"
-    
-    # Apply local sources first  
-    apply_local_sources
-    
+
     # Try to find the package in different feeds
     local package_path=""
     if [[ -d "package/feeds/libremesh/$package" ]]; then
@@ -293,12 +290,15 @@ rebuild_specific_package() {
         print_error "Package not found: $package"
         return 1
     fi
-    
+
     print_info "Found package at: $package_path"
-    
+
     print_info "Cleaning $package..."
     make "$package_path/clean"
-    
+
+    # Apply local sources after clean (clean removes Makefile patches)
+    apply_local_sources
+
     print_info "Rebuilding $package..."
     make "$package_path/compile"
     
