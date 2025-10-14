@@ -22,5 +22,5 @@
 +# LIBREMESH_FEED is now generated directly by lime-dev versions-parser.sh
 +lo:define_default_value LIBREMESH_FEED "${LIBREMESH_FEED:-src-git libremesh https://github.com/libremesh/lime-packages.git;master}"
  
- # LIME-DEV: Use fixed absolute path for librerouter feed
- lo:define_default_value LIBREROUTER_FEED "src-link librerouter /home/fede/REPOS/lime-dev/repos/librerouteros/packages"
+ # LIME-DEV: Use dynamic path for librerouter feed (resolved at runtime)
+ lo:define_default_value LIBREROUTER_FEED "src-link librerouter $(dirname $(realpath ${BASH_SOURCE[0]}))/packages"
