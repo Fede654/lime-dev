@@ -40,16 +40,16 @@ if [[ -f "$LIME_BUILD_DIR/scripts/utils/versions-parser.sh" ]]; then
     fi
 else
     # Fallback to direct environment setup
-    export OPENWRT_SRC_DIR="$LIBREROUTEROS_DIR/openwrt/"
+    export OPENWRT_SRC_DIR="$LIME_BUILD_DIR/repos/openwrt/"
     export KCONFIG_UTILS_DIR="$LIME_BUILD_DIR/repos/kconfig-utils/"
     export LIBREROUTEROS_DIR="$LIBREROUTEROS_DIR"
-    export OPENWRT_DL_DIR="$LIME_BUILD_DIR/dl/"
+    export OPENWRT_DL_DIR="$LIME_BUILD_DIR/build/openwrt-downloads/"
     export LIBREROUTEROS_BUILD_DIR="$LIME_BUILD_DIR/build/"
 fi
 
-# Ensure necessary directories exist
-mkdir -p "$OPENWRT_DL_DIR"
-mkdir -p "$LIBREROUTEROS_BUILD_DIR"
+# Ensure necessary directories exist (suppress existing directory messages)
+mkdir -p "$OPENWRT_DL_DIR" 2>/dev/null || true
+mkdir -p "$LIBREROUTEROS_BUILD_DIR" 2>/dev/null || true
 
 echo "LibreRouterOS Build Wrapper"
 echo "  OpenWrt source: $OPENWRT_SRC_DIR"
