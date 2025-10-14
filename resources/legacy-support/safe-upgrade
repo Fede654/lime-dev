@@ -300,9 +300,11 @@ local function bootstrap(args)
     set_uboot_env('fw1_addr', fw1_addr)
     set_uboot_env('fw2_addr', fw2_addr)
 
-    -- configure cmdline using the current cmdline config to not force
-    -- us to know here the correct cmdline bootargs of the running kernel
-    local boot_1 = 'set bootargs ' .. get_current_cmdline() .. '; echo booting part 1; bootm ${fw_addr};'
+    -- configure boot_1 with explicit bootargs for partition 1
+    -- using lowercase 'art' for consistency with upgrade() function (line 364)
+    -- mtdparts layout: firmware in first position for partition 1
+    -- this fixes boot issues when testing partition 1 from partition 2
+    local boot_1 = 'set bootargs console=ttyS0,115200 board=LIBREROUTERV1 mtdparts=spi0.0:256k(u-boot),64k(u-boot-env),7936k(firmware),7936k(fw2),128k(res),64k(art); echo booting part 1; bootm ${fw_addr};'
     set_uboot_env('boot_1', boot_1)
     set_uboot_env('su_version', su.version)
 

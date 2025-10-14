@@ -268,8 +268,8 @@ check_safe_upgrade_version() {
     
     # Local safe-upgrade for legacy device support
     local local_safe_upgrade="$SCRIPT_DIR/../../resources/legacy-support/safe-upgrade"
-    local known_latest_hash="309149758a17b8f90454550478de5d20510e7984742d899549a9c1c36cae539b"
-    local known_latest_size="18338"
+    local known_latest_hash="6be05df304c2e72b233770b41e5f05989d63f11d4cb71ad609fe6d7249f1748e"
+    local known_latest_size="18575"
     local original_upstream_hash="18e5c0bba3119366101a6f246201f4c3e220c96712a122fa05a7e25cad2c7cbd"
     
     print_info "Using local safe-upgrade for legacy device support..."
@@ -416,23 +416,32 @@ install_safe_upgrade() {
     # Verify installation
     if ssh_cmd "test -x /usr/sbin/safe-upgrade"; then
         print_success "safe-upgrade installed successfully"
-        
-        # Test functionality
-        if ssh_cmd "/usr/sbin/safe-upgrade show" >/dev/null 2>&1; then
-            print_success "safe-upgrade is functional"
-            
-            # Bootstrap if needed
-            local status=$(ssh_cmd "/usr/sbin/safe-upgrade show 2>/dev/null | head -1" || echo "")
-            if [[ "$status" == *"not bootstrapped"* ]]; then
-                print_info "Bootstrapping safe-upgrade..."
-                ssh_cmd "/usr/sbin/safe-upgrade bootstrap"
+
+        # Check if bootstrap is needed (show fails if not bootstrapped)
+        local status=$(ssh_cmd "/usr/sbin/safe-upgrade show 2>&1 | head -1" || echo "")
+
+        if [[ "$status" == *"not installed"* ]] || [[ "$status" == *"not bootstrapped"* ]]; then
+            print_info "safe-upgrade needs bootstrap, running..."
+            if ssh_cmd "/usr/sbin/safe-upgrade bootstrap" >/dev/null 2>&1; then
+                print_success "Bootstrap completed successfully"
+            else
+                print_error "Bootstrap failed"
+                return 1
             fi
-            
+
+            # Verify bootstrap worked
+            status=$(ssh_cmd "/usr/sbin/safe-upgrade show 2>&1 | head -1" || echo "")
+        fi
+
+        # Final verification
+        if [[ "$status" == *"version:"* ]] || ssh_cmd "/usr/sbin/safe-upgrade show" >/dev/null 2>&1; then
+            print_success "safe-upgrade is functional"
             print_success "safe-upgrade ready for use"
             print_info "Previous version backed up as: /usr/sbin/safe-upgrade.backup.YYYYMMDD_HHMMSS"
             return 0
         else
             print_error "safe-upgrade installation verification failed"
+            print_error "Status: $status"
             return 1
         fi
     else
