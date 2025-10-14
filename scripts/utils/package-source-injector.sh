@@ -201,7 +201,7 @@ patch_package_makefile() {
             # lime-app specific patching
             if [[ "$package_name" == "lime-app" ]]; then
                 # For lime-app, we need to replace both variables and Build sections
-                local source_location=$(echo "$source_spec" | cut -d':' -f2)
+                local source_location=$(echo "$source_spec" | cut -d':' -f2-)
                 
                 # For lime-app, add variables before include, Build/Prepare after include
                 # Pre-evaluate git hash to avoid make shell evaluation issues
@@ -362,7 +362,7 @@ apply_package_injection() {
         if [[ "$package_name" == "lime-app" && "$mode" == "local" ]]; then
             local source_type=$(echo "$source_spec" | cut -d':' -f1)
             if [[ "$source_type" == "local" ]]; then
-                local source_location=$(echo "$source_spec" | cut -d':' -f2)
+                local source_location=$(echo "$source_spec" | cut -d':' -f2-)
                 if ! build_lime_app_if_needed "$source_location"; then
                     print_error "Failed to build lime-app, skipping Makefile patching"
                     ((failed_count++))
