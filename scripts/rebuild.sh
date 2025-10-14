@@ -139,7 +139,15 @@ rebuild_lime_app_only() {
     
     # Generate firmware image
     print_info "🔧 Generating firmware image with updated lime-app..."
-    
+
+    # CRITICAL: Force reinstall of package to staging rootfs
+    # Without this, target/linux/install uses old rootfs files
+    print_info "🔄 Forcing lime-app reinstall to staging rootfs..."
+    rm -rf "$BUILD_DIR/build_dir/target-mips_24kc_musl/root-ath79/www/app"
+    rm -rf "$BUILD_DIR/build_dir/target-mips_24kc_musl/root-ath79/etc/uci-defaults/97-lime-app-spa-routing"
+    rm -rf "$BUILD_DIR/build_dir/target-mips_24kc_musl/root-ath79/www/cgi-bin/lime-app-spa"
+    make package/feeds/libremesh/lime-app/install
+
     if [[ "$multi_threaded" == "true" ]]; then
         print_info "⚡ Using multi-threaded full build (fastest but risky)"
         local make_command="make -j$(nproc)"
