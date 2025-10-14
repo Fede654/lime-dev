@@ -65,6 +65,8 @@ parse_source() {
         # First try explicit local source configuration
         local local_source=$(parse_config "sources" "$source_key_local" "$config_file")
         if [[ -n "$local_source" ]]; then
+            # Replace LIME_BUILD_DIR placeholder with actual path
+            local_source="${local_source//LIME_BUILD_DIR/$LIME_BUILD_DIR}"
             echo "$local_source"
             return 0
         else
@@ -208,9 +210,9 @@ export KCONFIG_UTILS_REPO="$kconfig_utils_repo"
 # Build Paths (from umbrella repo)
 export LIME_BUILD_DIR="$LIME_BUILD_DIR"
 export LIBREROUTEROS_DIR="$LIME_BUILD_DIR/repos/librerouteros"
-export OPENWRT_SRC_DIR="$LIME_BUILD_DIR/repos/librerouteros/openwrt"
+export OPENWRT_SRC_DIR="$LIME_BUILD_DIR/repos/openwrt"
 export KCONFIG_UTILS_DIR="$LIME_BUILD_DIR/repos/kconfig-utils"
-export OPENWRT_DL_DIR="$LIME_BUILD_DIR/dl"
+export OPENWRT_DL_DIR="$LIME_BUILD_DIR/build/openwrt-downloads"
 export LIBREROUTEROS_BUILD_DIR="$LIME_BUILD_DIR/build"
 
 # Configuration Metadata

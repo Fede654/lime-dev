@@ -484,11 +484,13 @@ main() {
     safe_setup_system
     safe_install_system_wide
     
-    # Apply lime-dev patches to librerouteros build script if repos were cloned
-    if [[ "$BUILD_REMOTE_ONLY" != "true" && -f "$LIME_BUILD_DIR/repos/librerouteros/librerouteros_build.sh" ]]; then
+    # Apply lime-dev patches if repos were cloned
+    if [[ "$BUILD_REMOTE_ONLY" != "true" ]]; then
         print_info "Applying lime-dev integration patches..."
-        if [[ -f "$LIME_BUILD_DIR/scripts/utils/patch-librerouteros-build.sh" ]]; then
-            "$LIME_BUILD_DIR/scripts/utils/patch-librerouteros-build.sh" apply
+        if [[ -f "$LIME_BUILD_DIR/scripts/utils/apply-patches.sh" ]]; then
+            "$LIME_BUILD_DIR/scripts/utils/apply-patches.sh" >/dev/null 2>&1 || {
+                print_warning "Some patches failed to apply - this is usually normal for initial setup"
+            }
         fi
     fi
     

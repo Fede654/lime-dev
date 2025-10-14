@@ -177,19 +177,27 @@ update_all_repos() {
         echo ""
     fi
     
-    # Apply lime-dev patches to librerouteros build script
+    # Apply all lime-dev patches from /patches directory
     if [[ "$VERBOSE" == "true" ]]; then
-        print_info "Applying lime-dev integration patches..."
+        print_info "Applying lime-dev patches..."
     fi
     
-    if [[ -f "$WORK_DIR/scripts/utils/patch-librerouteros-build.sh" ]]; then
+    if [[ -f "$WORK_DIR/scripts/utils/apply-patches.sh" ]]; then
         if [[ "$VERBOSE" == "true" ]]; then
-            "$WORK_DIR/scripts/utils/patch-librerouteros-build.sh" apply
+            "$WORK_DIR/scripts/utils/apply-patches.sh"
         else
-            "$WORK_DIR/scripts/utils/patch-librerouteros-build.sh" apply >/dev/null 2>&1
+            # Apply patches quietly, only show critical errors
+            patch_output=$("$WORK_DIR/scripts/utils/apply-patches.sh" 2>&1)
+            patch_exit_code=$?
+            
+            if [[ $patch_exit_code -ne 0 ]]; then
+                echo "❌ ERROR: Repository patches failed to apply"
+                echo "$patch_output" | grep -E "\[PATCHES\].*ERROR|❌|Failed" || echo "   Unknown patch application error"
+                ((UPDATE_ERRORS++))
+            fi
         fi
     else
-        echo "❌ ERROR: Patch script not found, manual intervention may be required"
+        echo "❌ ERROR: Repository patch script not found, manual intervention may be required"
         ((UPDATE_ERRORS++))
     fi
     
