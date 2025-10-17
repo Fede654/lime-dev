@@ -11,6 +11,49 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIME_BUILD_DIR="$(dirname "$SCRIPT_DIR")"
 BUILD_DIR="$LIME_BUILD_DIR/build"
 
+# Architecture detection (dynamically determined from build configuration)
+# Supports ATH79 (mips_24kc), RAMIPS (mipsel_24kc), x86_64, and other targets
+detect_architecture() {
+    if [[ ! -f "$BUILD_DIR/.config" ]]; then
+        return 1
+    fi
+
+    # Detect package architecture from .config
+    local arch=$(grep "CONFIG_TARGET_ARCH_PACKAGES=" "$BUILD_DIR/.config" 2>/dev/null | cut -d'"' -f2)
+    if [[ -z "$arch" ]]; then
+        return 1
+    fi
+    echo "$arch"
+}
+
+detect_target_dir() {
+    local target_dir=$(find "$BUILD_DIR/build_dir" -maxdepth 1 -name "target-*" -type d 2>/dev/null | head -1)
+    if [[ -z "$target_dir" ]]; then
+        return 1
+    fi
+    echo "$target_dir"
+}
+
+detect_subtarget() {
+    # Find the subtarget from bin/targets directory structure
+    local subtarget_path=$(find "$BUILD_DIR/bin/targets" -mindepth 2 -maxdepth 2 -type d 2>/dev/null | head -1)
+    if [[ -z "$subtarget_path" ]]; then
+        return 1
+    fi
+    # Extract subtarget name from path (e.g., bin/targets/ramips/mt7621 -> mt7621)
+    basename "$subtarget_path"
+}
+
+detect_target_name() {
+    # Find the target name from bin/targets directory structure
+    local target_path=$(find "$BUILD_DIR/bin/targets" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -1)
+    if [[ -z "$target_path" ]]; then
+        return 1
+    fi
+    # Extract target name from path (e.g., bin/targets/ramips -> ramips)
+    basename "$target_path"
+}
+
 print_info() {
     echo "[REBUILD] $1"
 }
@@ -112,8 +155,26 @@ check_initial_build_required() {
 rebuild_lime_app_only() {
     local multi_threaded="${1:-false}"
     print_info "🚀 Ultra-fast lime-app rebuild"
-    
+
     check_initial_build_required
+
+    # Detect architecture dynamically
+    local ARCH=$(detect_architecture)
+    local TARGET_DIR=$(detect_target_dir)
+    local SUBTARGET=$(detect_subtarget)
+    local TARGET_NAME=$(detect_target_name)
+
+    if [[ -z "$ARCH" || -z "$TARGET_DIR" ]]; then
+        print_error "Failed to detect build architecture"
+        print_error "This usually means the initial build wasn't completed"
+        return 1
+    fi
+
+    print_info "Detected architecture: $ARCH"
+    print_info "Target directory: $(basename "$TARGET_DIR")"
+    if [[ -n "$TARGET_NAME" && -n "$SUBTARGET" ]]; then
+        print_info "Target: ${TARGET_NAME}/${SUBTARGET}"
+    fi
 
     cd "$BUILD_DIR"
 
@@ -125,9 +186,9 @@ rebuild_lime_app_only() {
 
     print_info "Rebuilding lime-app..."
     make package/feeds/libremesh/lime-app/compile
-    
+
     print_info "Verifying lime-app package was created..."
-    local package_pattern="$BUILD_DIR/bin/packages/mips_24kc/libremesh/lime-app_*.ipk"
+    local package_pattern="$BUILD_DIR/bin/packages/$ARCH/libremesh/lime-app_*.ipk"
     if ls $package_pattern 1> /dev/null 2>&1; then
         print_info "✅ lime-app package created successfully"
         local package_file=$(ls -t $package_pattern | head -1)
@@ -143,9 +204,9 @@ rebuild_lime_app_only() {
     # CRITICAL: Force reinstall of package to staging rootfs
     # Without this, target/linux/install uses old rootfs files
     print_info "🔄 Forcing lime-app reinstall to staging rootfs..."
-    rm -rf "$BUILD_DIR/build_dir/target-mips_24kc_musl/root-ath79/www/app"
-    rm -rf "$BUILD_DIR/build_dir/target-mips_24kc_musl/root-ath79/etc/uci-defaults/97-lime-app-spa-routing"
-    rm -rf "$BUILD_DIR/build_dir/target-mips_24kc_musl/root-ath79/www/cgi-bin/lime-app-spa"
+    rm -rf "$TARGET_DIR/root-${TARGET_NAME}/www/app"
+    rm -rf "$TARGET_DIR/root-${TARGET_NAME}/etc/uci-defaults/97-lime-app-spa-routing"
+    rm -rf "$TARGET_DIR/root-${TARGET_NAME}/www/cgi-bin/lime-app-spa"
     make package/feeds/libremesh/lime-app/install
 
     if [[ "$multi_threaded" == "true" ]]; then
@@ -191,8 +252,26 @@ rebuild_lime_app_only() {
 rebuild_lime_packages() {
     local multi_threaded="${1:-false}"
     print_info "📦 Stage 3: All lime-packages rebuild"
-    
+
     check_initial_build_required
+
+    # Detect architecture dynamically
+    local ARCH=$(detect_architecture)
+    local TARGET_DIR=$(detect_target_dir)
+    local SUBTARGET=$(detect_subtarget)
+    local TARGET_NAME=$(detect_target_name)
+
+    if [[ -z "$ARCH" || -z "$TARGET_DIR" ]]; then
+        print_error "Failed to detect build architecture"
+        print_error "This usually means the initial build wasn't completed"
+        return 1
+    fi
+
+    print_info "Detected architecture: $ARCH"
+    print_info "Target directory: $(basename "$TARGET_DIR")"
+    if [[ -n "$TARGET_NAME" && -n "$SUBTARGET" ]]; then
+        print_info "Target: ${TARGET_NAME}/${SUBTARGET}"
+    fi
 
     cd "$BUILD_DIR"
 
@@ -208,7 +287,7 @@ rebuild_lime_packages() {
         "ubus-lime-metrics"
         "lime-debug"
     )
-    
+
     print_info "Cleaning lime packages..."
     for pkg in "${lime_packages[@]}"; do
         if [[ -d "package/feeds/libremesh/$pkg" ]]; then
@@ -226,16 +305,16 @@ rebuild_lime_packages() {
             print_info "  Building $pkg..."
             make "package/feeds/libremesh/$pkg/compile"
             # Skip install step - packages are created during compile
-            if ls "$BUILD_DIR/bin/packages/mips_24kc/libremesh/$pkg"*.ipk 1> /dev/null 2>&1; then
+            if ls "$BUILD_DIR/bin/packages/$ARCH/libremesh/$pkg"*.ipk 1> /dev/null 2>&1; then
                 print_info "  ✅ $pkg package created"
             else
                 print_info "  ⚠️  $pkg package not found (may be expected)"
             fi
         fi
     done
-    
+
     print_info "✅ Package rebuild complete!"
-    print_info "📁 Packages available in: $BUILD_DIR/bin/packages/mips_24kc/libremesh/"
+    print_info "📁 Packages available in: $BUILD_DIR/bin/packages/$ARCH/libremesh/"
     
     # Generate firmware image  
     print_info "🔧 Generating firmware image with updated packages..."
@@ -271,10 +350,28 @@ rebuild_lime_packages() {
 rebuild_specific_package() {
     local package="$1"
     local multi_threaded="${2:-false}"
-    
+
     print_info "🎯 Rebuilding specific package: $package"
-    
+
     check_initial_build_required
+
+    # Detect architecture dynamically
+    local ARCH=$(detect_architecture)
+    local TARGET_DIR=$(detect_target_dir)
+    local SUBTARGET=$(detect_subtarget)
+    local TARGET_NAME=$(detect_target_name)
+
+    if [[ -z "$ARCH" || -z "$TARGET_DIR" ]]; then
+        print_error "Failed to detect build architecture"
+        print_error "This usually means the initial build wasn't completed"
+        return 1
+    fi
+
+    print_info "Detected architecture: $ARCH"
+    print_info "Target directory: $(basename "$TARGET_DIR")"
+    if [[ -n "$TARGET_NAME" && -n "$SUBTARGET" ]]; then
+        print_info "Target: ${TARGET_NAME}/${SUBTARGET}"
+    fi
 
     cd "$BUILD_DIR"
 
@@ -301,11 +398,11 @@ rebuild_specific_package() {
 
     print_info "Rebuilding $package..."
     make "$package_path/compile"
-    
+
     # Verify package was created
-    if ls "$BUILD_DIR/bin/packages/mips_24kc"/*/"$package"*.ipk 1> /dev/null 2>&1; then
+    if ls "$BUILD_DIR/bin/packages/$ARCH"/*/"$package"*.ipk 1> /dev/null 2>&1; then
         print_info "✅ $package package created successfully"
-        local package_file=$(ls -t "$BUILD_DIR/bin/packages/mips_24kc"/*/"$package"*.ipk | head -1)
+        local package_file=$(ls -t "$BUILD_DIR/bin/packages/$ARCH"/*/"$package"*.ipk | head -1)
         
         # Generate firmware image
         print_info "🔧 Generating firmware image with updated $package..."
