@@ -15,6 +15,31 @@ patches/
 
 ## Current Patches
 
+### openwrt/
+
+#### openwrt-librerouter-device-compatibility.patch - LibreRouter R2 Sysupgrade Fix
+- **Purpose**: Fix sysupgrade device compatibility check for LibreRouter R2
+- **Problem**: Device name mismatch causing sysupgrade to require `--force` flag
+- **Solution**: Remove manual SUPPORTED_DEVICES override to allow automatic device name conversion
+- **File**: `target/linux/ramips/image/mt7621.mk`
+- **Created**: 2025-10-17
+- **Status**: Production ready
+
+**Technical Details**:
+
+The issue occurred due to a mismatch between how the system identifies itself and what the firmware image accepts:
+
+1. **Device Tree** defines: `compatible = "librerouter,librerouter-r2", "mediatek,mt7621-soc"`
+2. **System boot** reads this and generates: `/tmp/sysinfo/board_name` = `librerouter,librerouter-r2`
+3. **OpenWRT default behavior**: Automatically converts device name `librerouter_librerouter-r2` → `librerouter,librerouter-r2` (underscore to comma)
+4. **Manual override problem**: `SUPPORTED_DEVICES := librerouter-r2` was breaking this conversion
+
+**Root Cause**: The manual `SUPPORTED_DEVICES` override in mt7621.mk was setting the value to `librerouter-r2` instead of using the automatic conversion that produces `librerouter,librerouter-r2`.
+
+**Solution**: Remove the manual override line, allowing OpenWRT's default mechanism (defined in `include/image.mk:516`) to automatically convert underscores to commas, matching the device tree compatible string.
+
+**Result**: After applying this patch and rebuilding the firmware, `sysupgrade` works without requiring the `--force` flag, as the device name matches correctly.
+
 ### lime-packages/ubus-lime-utils/
 
 #### lime-utils.json - Auto-login ACL Fix

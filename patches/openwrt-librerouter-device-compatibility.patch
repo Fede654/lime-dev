@@ -1,0 +1,9 @@
+--- a/target/linux/ramips/image/mt7621.mk
++++ b/target/linux/ramips/image/mt7621.mk
+@@ -1855,7 +1855,6 @@ define Device/librerouter_librerouter-r2
+   DEVICE_VENDOR := LibreRouter
+   DEVICE_MODEL := LibreRouter R2
+   DEVICE_PACKAGES := kmod-usb3
+-  SUPPORTED_DEVICES := librerouter-r2
+ endef
+ TARGET_DEVICES += librerouter_librerouter-r2
