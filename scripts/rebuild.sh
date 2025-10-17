@@ -101,13 +101,43 @@ EOF
 # Apply package source injection for local development
 apply_local_sources() {
     print_info "Applying local source injection for development..."
-    
+
     if [[ -x "$SCRIPT_DIR/utils/package-source-injector.sh" ]]; then
         "$SCRIPT_DIR/utils/package-source-injector.sh" apply local "$BUILD_DIR"
     else
         print_error "Package source injector not found"
         return 1
     fi
+}
+
+# Clean package files from staging rootfs before reinstall
+# This ensures old files don't persist after rebuild
+cleanup_package_staging() {
+    local pkg_name="$1"
+    local target_dir="$2"
+    local target_name="$3"
+
+    # Validar parámetros
+    if [[ -z "$pkg_name" || -z "$target_dir" || -z "$target_name" ]]; then
+        print_error "cleanup_package_staging: Missing required parameters"
+        return 1
+    fi
+
+    local staging_root="$target_dir/root-${target_name}"
+
+    # Para lime-app: cleanup específico de directorios conocidos
+    if [[ "$pkg_name" == "lime-app" ]]; then
+        print_info "Cleaning lime-app from staging rootfs..."
+        rm -rf "$staging_root/www/app" \
+               "$staging_root/www/lime_app_index.html" \
+               "$staging_root/www/cgi-bin/lime-app-spa" \
+               "$staging_root/etc/uci-defaults/"*lime-app* \
+               "$staging_root/usr/share/rpcd/acl.d/iwinfo.json"
+    fi
+
+    # Cleanup genérico: borrar markers de instalación
+    rm -f "$target_dir/.pkgdir/${pkg_name}.installed"
+    rm -f "$staging_root/stamp/.${pkg_name}_installed"
 }
 
 # Check if initial build is required
@@ -164,15 +194,36 @@ rebuild_lime_app_only() {
     local SUBTARGET=$(detect_subtarget)
     local TARGET_NAME=$(detect_target_name)
 
-    if [[ -z "$ARCH" || -z "$TARGET_DIR" ]]; then
-        print_error "Failed to detect build architecture"
-        print_error "This usually means the initial build wasn't completed"
+    # Validación exhaustiva de variables críticas
+    if [[ -z "$ARCH" ]]; then
+        print_error "Failed to detect architecture from .config"
+        print_error "Check: grep CONFIG_TARGET_ARCH_PACKAGES build/.config"
+        return 1
+    fi
+
+    if [[ -z "$TARGET_DIR" ]]; then
+        print_error "Failed to detect target directory"
+        print_error "Check: ls build/build_dir/target-*"
+        return 1
+    fi
+
+    if [[ -z "$TARGET_NAME" ]]; then
+        print_error "Failed to detect target name"
+        print_error "Check: ls build/bin/targets/*"
+        return 1
+    fi
+
+    # Validar consistencia entre ARCH y TARGET_DIR
+    if [[ "$(basename "$TARGET_DIR")" != *"$ARCH"* ]]; then
+        print_error "Architecture mismatch detected!"
+        print_error "  .config says: $ARCH"
+        print_error "  target_dir is: $(basename "$TARGET_DIR")"
         return 1
     fi
 
     print_info "Detected architecture: $ARCH"
     print_info "Target directory: $(basename "$TARGET_DIR")"
-    if [[ -n "$TARGET_NAME" && -n "$SUBTARGET" ]]; then
+    if [[ -n "$SUBTARGET" ]]; then
         print_info "Target: ${TARGET_NAME}/${SUBTARGET}"
     fi
 
@@ -183,6 +234,11 @@ rebuild_lime_app_only() {
 
     # Apply local sources after clean (clean removes Makefile patches)
     apply_local_sources
+
+    # Regenerar package dependencies (evita errores de .packagedeps corrupto)
+    print_info "Regenerating package dependencies..."
+    rm -f tmp/.packagedeps
+    make package/symlinks 2>&1 | grep -E "(ERROR|error)" || true
 
     print_info "Rebuilding lime-app..."
     make package/feeds/libremesh/lime-app/compile
@@ -204,48 +260,57 @@ rebuild_lime_app_only() {
     # CRITICAL: Force reinstall of package to staging rootfs
     # Without this, target/linux/install uses old rootfs files
     print_info "🔄 Forcing lime-app reinstall to staging rootfs..."
-    rm -rf "$TARGET_DIR/root-${TARGET_NAME}/www/app"
-    rm -rf "$TARGET_DIR/root-${TARGET_NAME}/etc/uci-defaults/97-lime-app-spa-routing"
-    rm -rf "$TARGET_DIR/root-${TARGET_NAME}/www/cgi-bin/lime-app-spa"
+    cleanup_package_staging "lime-app" "$TARGET_DIR" "$TARGET_NAME"
     make package/feeds/libremesh/lime-app/install
 
     if [[ "$multi_threaded" == "true" ]]; then
-        print_info "⚡ Using multi-threaded full build (fastest but risky)"
+        print_info "⚡ Using multi-threaded build (fastest, may have race conditions)"
         local make_command="make -j$(nproc)"
         local time_estimate="2-5 minutes"
     else
-        print_info "🚀 Using optimized target build (fast and reliable)"
+        print_info "🚀 Using single-threaded target build (reliable)"
         local make_command="make target/linux/install"
         local time_estimate="3-8 minutes"
     fi
-    
+
     print_info "⏱️  Estimated time: $time_estimate"
-    
+
     if $make_command; then
         print_success "✅ Firmware image generation complete!"
-        print_info "🎯 Updated firmware available in: $BUILD_DIR/bin/targets/"
-        
-        local latest_firmware=$(find "$BUILD_DIR/bin/targets" -name "*.bin" -newer "$package_file" | head -1)
-        if [[ -n "$latest_firmware" ]]; then
-            print_info "📁 Latest image: $(basename "$latest_firmware")"
-        else
-            # Find any firmware image
-            local any_firmware=$(find "$BUILD_DIR/bin/targets" -name "*.bin" | head -1)
-            if [[ -n "$any_firmware" ]]; then
-                print_info "📁 Firmware image: $(basename "$any_firmware")"
-            fi
-        fi
-        
-        print_info ""
-        print_info "⚡ Alternative: Install package directly on device for faster iteration:"
-        print_info "   scp $package_file root@10.13.0.1:/tmp/"
-        print_info "   ssh root@10.13.0.1 'opkg install /tmp/$(basename "$package_file")'"
     else
-        print_error "❌ Firmware image generation failed"
-        print_info "📦 Package available for manual installation: $(basename "$package_file")"
-        print_info "🔧 Try manual firmware generation: cd $BUILD_DIR && make -j1"
-        return 1
+        # Fallback solo si era multi-threaded
+        if [[ "$multi_threaded" == "true" ]]; then
+            print_error "⚠️  Multi-threaded build failed, retrying single-threaded..."
+            if make target/linux/install; then
+                print_success "✅ Firmware complete (single-threaded fallback)"
+            else
+                print_error "❌ Build failed"
+                print_info "📦 Package available: $(basename "$package_file")"
+                return 1
+            fi
+        else
+            print_error "❌ Build failed"
+            print_info "📦 Package available: $(basename "$package_file")"
+            return 1
+        fi
     fi
+
+    print_info "🎯 Updated firmware available in: $BUILD_DIR/bin/targets/"
+    local latest_firmware=$(find "$BUILD_DIR/bin/targets" -name "*.bin" -newer "$package_file" | head -1)
+    if [[ -n "$latest_firmware" ]]; then
+        print_info "📁 Latest image: $(basename "$latest_firmware")"
+    else
+        # Find any firmware image
+        local any_firmware=$(find "$BUILD_DIR/bin/targets" -name "*.bin" | head -1)
+        if [[ -n "$any_firmware" ]]; then
+            print_info "📁 Firmware image: $(basename "$any_firmware")"
+        fi
+    fi
+
+    print_info ""
+    print_info "⚡ Alternative: Install package directly on device for faster iteration:"
+    print_info "   scp $package_file root@ROUTER_IP:/tmp/"
+    print_info "   ssh root@ROUTER_IP 'opkg install /tmp/$(basename "$package_file")'"
 }
 
 # Rebuild all lime-packages (incremental)
@@ -261,15 +326,36 @@ rebuild_lime_packages() {
     local SUBTARGET=$(detect_subtarget)
     local TARGET_NAME=$(detect_target_name)
 
-    if [[ -z "$ARCH" || -z "$TARGET_DIR" ]]; then
-        print_error "Failed to detect build architecture"
-        print_error "This usually means the initial build wasn't completed"
+    # Validación exhaustiva de variables críticas
+    if [[ -z "$ARCH" ]]; then
+        print_error "Failed to detect architecture from .config"
+        print_error "Check: grep CONFIG_TARGET_ARCH_PACKAGES build/.config"
+        return 1
+    fi
+
+    if [[ -z "$TARGET_DIR" ]]; then
+        print_error "Failed to detect target directory"
+        print_error "Check: ls build/build_dir/target-*"
+        return 1
+    fi
+
+    if [[ -z "$TARGET_NAME" ]]; then
+        print_error "Failed to detect target name"
+        print_error "Check: ls build/bin/targets/*"
+        return 1
+    fi
+
+    # Validar consistencia entre ARCH y TARGET_DIR
+    if [[ "$(basename "$TARGET_DIR")" != *"$ARCH"* ]]; then
+        print_error "Architecture mismatch detected!"
+        print_error "  .config says: $ARCH"
+        print_error "  target_dir is: $(basename "$TARGET_DIR")"
         return 1
     fi
 
     print_info "Detected architecture: $ARCH"
     print_info "Target directory: $(basename "$TARGET_DIR")"
-    if [[ -n "$TARGET_NAME" && -n "$SUBTARGET" ]]; then
+    if [[ -n "$SUBTARGET" ]]; then
         print_info "Target: ${TARGET_NAME}/${SUBTARGET}"
     fi
 
@@ -293,11 +379,17 @@ rebuild_lime_packages() {
         if [[ -d "package/feeds/libremesh/$pkg" ]]; then
             print_info "  Cleaning $pkg..."
             make "package/feeds/libremesh/$pkg/clean" || true
+            cleanup_package_staging "$pkg" "$TARGET_DIR" "$TARGET_NAME"
         fi
     done
 
     # Apply local sources after clean (clean removes Makefile patches)
     apply_local_sources
+
+    # Regenerar package dependencies (evita errores de .packagedeps corrupto)
+    print_info "Regenerating package dependencies..."
+    rm -f tmp/.packagedeps
+    make package/symlinks 2>&1 | grep -E "(ERROR|error)" || true
 
     print_info "Rebuilding lime packages..."
     for pkg in "${lime_packages[@]}"; do
@@ -320,29 +412,41 @@ rebuild_lime_packages() {
     print_info "🔧 Generating firmware image with updated packages..."
     
     if [[ "$multi_threaded" == "true" ]]; then
-        print_info "⚡ Using multi-threaded full build (fastest but risky)"
+        print_info "⚡ Using multi-threaded build (fastest, may have race conditions)"
         local make_command="make -j$(nproc)"
         local time_estimate="3-8 minutes"
     else
-        print_info "🚀 Using optimized target build (fast and reliable)"
+        print_info "🚀 Using single-threaded target build (reliable)"
         local make_command="make target/linux/install"
-        local time_estimate="5-10 minutes" 
+        local time_estimate="5-10 minutes"
     fi
-    
+
     print_info "⏱️  Estimated time: $time_estimate"
-    
+
     if $make_command; then
         print_success "✅ Incremental rebuild complete!"
-        print_info "🎯 Updated firmware available in: $BUILD_DIR/bin/targets/"
-        local latest_firmware=$(find "$BUILD_DIR/bin/targets" -name "*.bin" | head -1)
-        if [[ -n "$latest_firmware" ]]; then
-            print_info "📁 Firmware image: $(basename "$latest_firmware")"
-        fi
     else
-        print_error "❌ Firmware image generation failed"
-        print_info "📦 Packages available but image not updated"
-        print_info "🔧 Try manual firmware generation: cd $BUILD_DIR && make -j1"
-        return 1
+        # Fallback solo si era multi-threaded
+        if [[ "$multi_threaded" == "true" ]]; then
+            print_error "⚠️  Multi-threaded build failed, retrying single-threaded..."
+            if make target/linux/install; then
+                print_success "✅ Rebuild complete (single-threaded fallback)"
+            else
+                print_error "❌ Build failed"
+                print_info "📦 Packages available but image not updated"
+                return 1
+            fi
+        else
+            print_error "❌ Build failed"
+            print_info "📦 Packages available but image not updated"
+            return 1
+        fi
+    fi
+
+    print_info "🎯 Updated firmware available in: $BUILD_DIR/bin/targets/"
+    local latest_firmware=$(find "$BUILD_DIR/bin/targets" -name "*.bin" | head -1)
+    if [[ -n "$latest_firmware" ]]; then
+        print_info "📁 Firmware image: $(basename "$latest_firmware")"
     fi
 }
 
@@ -361,15 +465,36 @@ rebuild_specific_package() {
     local SUBTARGET=$(detect_subtarget)
     local TARGET_NAME=$(detect_target_name)
 
-    if [[ -z "$ARCH" || -z "$TARGET_DIR" ]]; then
-        print_error "Failed to detect build architecture"
-        print_error "This usually means the initial build wasn't completed"
+    # Validación exhaustiva de variables críticas
+    if [[ -z "$ARCH" ]]; then
+        print_error "Failed to detect architecture from .config"
+        print_error "Check: grep CONFIG_TARGET_ARCH_PACKAGES build/.config"
+        return 1
+    fi
+
+    if [[ -z "$TARGET_DIR" ]]; then
+        print_error "Failed to detect target directory"
+        print_error "Check: ls build/build_dir/target-*"
+        return 1
+    fi
+
+    if [[ -z "$TARGET_NAME" ]]; then
+        print_error "Failed to detect target name"
+        print_error "Check: ls build/bin/targets/*"
+        return 1
+    fi
+
+    # Validar consistencia entre ARCH y TARGET_DIR
+    if [[ "$(basename "$TARGET_DIR")" != *"$ARCH"* ]]; then
+        print_error "Architecture mismatch detected!"
+        print_error "  .config says: $ARCH"
+        print_error "  target_dir is: $(basename "$TARGET_DIR")"
         return 1
     fi
 
     print_info "Detected architecture: $ARCH"
     print_info "Target directory: $(basename "$TARGET_DIR")"
-    if [[ -n "$TARGET_NAME" && -n "$SUBTARGET" ]]; then
+    if [[ -n "$SUBTARGET" ]]; then
         print_info "Target: ${TARGET_NAME}/${SUBTARGET}"
     fi
 
@@ -392,9 +517,15 @@ rebuild_specific_package() {
 
     print_info "Cleaning $package..."
     make "$package_path/clean"
+    cleanup_package_staging "$package" "$TARGET_DIR" "$TARGET_NAME"
 
     # Apply local sources after clean (clean removes Makefile patches)
     apply_local_sources
+
+    # Regenerar package dependencies (evita errores de .packagedeps corrupto)
+    print_info "Regenerating package dependencies..."
+    rm -f tmp/.packagedeps
+    make package/symlinks 2>&1 | grep -E "(ERROR|error)" || true
 
     print_info "Rebuilding $package..."
     make "$package_path/compile"
@@ -403,26 +534,39 @@ rebuild_specific_package() {
     if ls "$BUILD_DIR/bin/packages/$ARCH"/*/"$package"*.ipk 1> /dev/null 2>&1; then
         print_info "✅ $package package created successfully"
         local package_file=$(ls -t "$BUILD_DIR/bin/packages/$ARCH"/*/"$package"*.ipk | head -1)
-        
+
         # Generate firmware image
         print_info "🔧 Generating firmware image with updated $package..."
-        
+
         if [[ "$multi_threaded" == "true" ]]; then
-            print_info "⚡ Using multi-threaded full build (fastest but risky)"
+            print_info "⚡ Using multi-threaded build (fastest, may have race conditions)"
             local make_command="make -j$(nproc)"
         else
-            print_info "🚀 Using optimized target build (fast and reliable)"
+            print_info "🚀 Using single-threaded target build (reliable)"
             local make_command="make target/linux/install"
         fi
-        
+
         if $make_command; then
             print_success "✅ Package $package rebuild complete!"
-            print_info "🎯 Updated firmware available in: $BUILD_DIR/bin/targets/"
         else
-            print_error "❌ Firmware image generation failed"
-            print_info "📦 Package available: $(basename "$package_file")"
-            return 1
+            # Fallback solo si era multi-threaded
+            if [[ "$multi_threaded" == "true" ]]; then
+                print_error "⚠️  Multi-threaded build failed, retrying single-threaded..."
+                if make target/linux/install; then
+                    print_success "✅ Package $package rebuild complete (single-threaded fallback)"
+                else
+                    print_error "❌ Build failed"
+                    print_info "📦 Package available: $(basename "$package_file")"
+                    return 1
+                fi
+            else
+                print_error "❌ Build failed"
+                print_info "📦 Package available: $(basename "$package_file")"
+                return 1
+            fi
         fi
+
+        print_info "🎯 Updated firmware available in: $BUILD_DIR/bin/targets/"
     else
         print_error "❌ $package package was not created"
         return 1
